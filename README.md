@@ -15,11 +15,30 @@
 
 - `POST /internal/ai/chat` — SSE 流式对话（DeepSeek）
 - 工具调用：`browse_anime`（榜单浏览）+ `search_anime`（标题检索）
-- 会话记忆（按 `conversationId` 的滑动窗口）
 - 服务间共享令牌鉴权
+- **无状态**：会话历史由上游 MySQL 提供，本服务不保留上下文
 - Bangumi 客户端 + 真实接口测试
 
 未实现（M2 起）：向量检索、Qdrant、embedding、评估脚本。
+
+## 请求契约
+
+```jsonc
+// 新格式（推荐）：完整消息窗口，最后一条必须是本轮用户消息
+{ "conversationId": "c1",
+  "messages": [ {"role":"user","content":"我想看科幻"},
+                {"role":"assistant","content":"好的"},
+                {"role":"user","content":"推荐几部"} ] }
+
+// 旧格式（便捷/调试用）：单轮，等价于只有一条 user 消息
+{ "message": "推荐几部科幻番" }
+```
+
+两者二选一；都为空返回 400。
+
+> **为什么是无状态的**：会话历史只有一个权威来源（`anime-chat-server` 的 MySQL），
+> 否则会出现「本服务重启后忘了、但界面还显示着历史」的不一致，且多实例部署需要粘性会话。
+> 窗口大小由上游决定，本服务不再二次裁剪。
 
 ## 运行
 

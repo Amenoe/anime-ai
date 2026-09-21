@@ -1,5 +1,6 @@
 package com.animeai.chat;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -8,9 +9,16 @@ import java.util.UUID;
 import com.animeai.chat.dto.ChatRequest;
 import com.animeai.model.AnimeCard;
 import com.animeai.support.Json;
+import com.animeai.tool.AnimeTools;
 
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.TokenUsage;
+import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.tool.ToolExecution;
 
@@ -31,6 +39,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *   onCompleteResponse  → usage + done
  *   onError             → error + 关闭
  * </pre>
+ *
+ * <p><b>无状态设计</b>：每次请求用上游传来的历史临时构造一份 ChatMemory，只服务于本次调用，
+ * 不跨请求保留。历史窗口由上游（anime-chat-server）决定，这里不再二次裁剪，
+ * 避免两处各裁一次导致上下文莫名丢失。
  */
 @Service
 public class ChatService {
@@ -40,10 +52,12 @@ public class ChatService {
     /** SSE 连接总时限，比模型侧 60s 超时留出余量 */
     private static final long EMITTER_TIMEOUT_MS = 120_000L;
 
-    private final AnimeAssistant assistant;
+    private final StreamingChatModel streamingChatModel;
+    private final AnimeTools animeTools;
 
-    public ChatService(AnimeAssistant assistant) {
-        this.assistant = assistant;
+    public ChatService(StreamingChatModel streamingChatModel, AnimeTools animeTools) {
+        this.streamingChatModel = streamingChatModel;
+        this.animeTools = animeTools;
     }
 
     public SseEmitter stream(ChatRequest request) {
@@ -60,8 +74,34 @@ public class ChatService {
         });
         emitter.onError(e -> log.debug("SSE 连接异常: {}", e.toString()));
 
+        List<ChatRequest.ChatMessageDto> messages = request.resolveMessages();
+        if (messages.isEmpty()) {
+            writer.send(SseEvent.ERROR, Map.of("message", "messages 与 message 不能同时为空"));
+            writer.complete();
+            return emitter;
+        }
+
         try {
-            TokenStream stream = assistant.chat(conversationId, request.message());
+            List<ChatMessage> history = toHistory(messages.subList(0, messages.size() - 1));
+            String prompt = messages.get(messages.size() - 1).content();
+
+            // 只服务于本次请求的记忆；+2 给「本轮 user」与可能的工具补充留位，不做二次裁剪
+            MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(history.size() + 2);
+            if (!history.isEmpty()) {
+                memory.set(history);
+            }
+
+            AnimeAssistant assistant = AiServices.builder(AnimeAssistant.class)
+                    .streamingChatModel(streamingChatModel)
+                    .chatMemory(memory)
+                    .tools(animeTools)
+                    .build();
+
+            log.debug(
+                    "stream conversationId={} 历史 {} 条，本轮长度 {}",
+                    conversationId, history.size(), prompt.length());
+
+            TokenStream stream = assistant.chat(prompt);
             stream.onPartialResponse(text -> writer.send(SseEvent.TEXT_DELTA, Map.of("text", text)))
                     .beforeToolExecution(before -> writer.send(
                             SseEvent.TOOL_CALL,
@@ -89,6 +129,19 @@ public class ChatService {
         }
 
         return emitter;
+    }
+
+    /** 上游传来的 role/content 映射为 LangChain4j 的消息类型；未知 role 当作用户消息。 */
+    private static List<ChatMessage> toHistory(List<ChatRequest.ChatMessageDto> messages) {
+        List<ChatMessage> history = new ArrayList<>(messages.size());
+        for (ChatRequest.ChatMessageDto m : messages) {
+            if ("assistant".equalsIgnoreCase(m.role())) {
+                history.add(AiMessage.from(m.content()));
+            } else {
+                history.add(UserMessage.from(m.content()));
+            }
+        }
+        return history;
     }
 
     /** 工具结果：列表型结果额外挂到 subjects 字段，前端可直接当卡片数组用。 */

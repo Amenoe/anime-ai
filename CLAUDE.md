@@ -34,7 +34,14 @@ Maven 不在默认 PATH 时：`export PATH="$PATH:/Users/rain/Java/apache-maven-
   该 starter 在 beta 线（`1.20.0-beta30`），属性名与自动装配行为可能在小版本间变动。
   `AiConfig` 显式声明 bean，便于排查。
 
-2. **Jackson 2 / Jackson 3 并存 —— 这是本仓最容易踩的坑**
+2. **本服务是无状态的 —— 不要把会话记忆做成单例 bean**
+  历史由 `anime-chat-server` 的 MySQL 持有，每次请求随 `messages` 传入。
+  `ChatService` 按请求构造 `MessageWindowChatMemory` 并预置历史（窗口大小 = 历史条数 + 2，不再二次裁剪），
+  再据此构造 `AiServices` 代理。因此 `AiConfig` **不提供** `AnimeAssistant` bean。
+  若改回 `@MemoryId` + `chatMemoryProvider` 的单例方案，会与 MySQL 形成两份记忆，
+  表现为「服务重启后模型忘了上下文、但界面还显示着历史」。
+
+3. **Jackson 2 / Jackson 3 并存 —— 这是本仓最容易踩的坑**
   - Boot 4 默认 **Jackson 3**（`tools.jackson.core:jackson-databind:3.x`）
   - LangChain4j 1.20.0 仍基于 **Jackson 2**（`com.fasterxml.jackson.core:2.21.x`）
   - 后果一：Boot 4 **不再**自动配置 `com.fasterxml.jackson.databind.ObjectMapper` bean，
@@ -43,17 +50,17 @@ Maven 不在默认 PATH 时：`export PATH="$PATH:/Users/rain/Java/apache-maven-
   - 对策：所有自有序列化/反序列化走 `com.animeai.support.Json.MAPPER`（Jackson 2，与 LangChain4j 同源）。
     Spring MVC 自己的请求/响应转换仍交给 Boot 4 的 Jackson 3 —— 我们的 REST DTO 不带 Jackson 注解。
 
-3. **工具设计依据实测，不是推测**
+4. **工具设计依据实测，不是推测**
   `POST /v0/search/subjects` 的 `keyword` 是**标题字面匹配**，没有语义/标签召回。
   用题材当 keyword 会返回噪音（实测 `keyword=动画 + tag=[科幻]` 的首条是「憨豆先生动画版」）。
   因此「推荐番剧」走 `browse_anime`（`GET /v0/subjects?sort=rank`），
   `search_anime` 只用于**用户说出作品名**的场景。
   改工具描述或系统提示前，先跑 `BangumiClientTest` 确认接口实际行为。
 
-4. **服务间鉴权**：`assertInternalToken` 必须被**每个**内部入口调用。
+5. **服务间鉴权**：`assertInternalToken` 必须被**每个**内部入口调用。
   曾经只给 `/chat` 加校验、漏了 `/ping`，配了令牌后探测接口依然匿名可用。
 
-5. **SSE 协议是前后端契约**，改事件名/字段要同步改：
+6. **SSE 协议是前后端契约**，改事件名/字段要同步改：
   `docs/ai-chat-tech-stack.md` §4.5、本仓 `SseEvent`、前端解析器。
   新增事件时保持前端「忽略未知事件」的容错，才能向后兼容。
 
