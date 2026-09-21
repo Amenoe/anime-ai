@@ -1,0 +1,26 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### IDE ###
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+
+### macOS ###
+.DS_Store
+
+### 环境变量：一律不提交 ###
+.env
+.env.*
+!.env.example
+
+### 日志 ###
+*.log
+logs/

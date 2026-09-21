@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.0.8</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.animeai</groupId>
+  <artifactId>anime-ai</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <name>anime-ai</name>
+  <description>AI 服务：番剧对话助手与 RAG 检索（M1：SSE 对话 + 工具调用）</description>
+
+  <properties>
+    <java.version>21</java.version>
+    <langchain4j.version>1.20.0</langchain4j.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!--
+        一个 BOM 管住 LangChain4j 的 GA 与 beta 两套版本：
+          langchain4j.stable.version = 1.20.0
+          langchain4j.beta.version   = 1.20.0-beta30
+        Qdrant 接入、Spring starter、本地 embedding、ONNX 重排都在 beta 线上，
+        M2 引入 langchain4j-qdrant 时无需再手工指定版本。
+      -->
+      <dependency>
+        <groupId>dev.langchain4j</groupId>
+        <artifactId>langchain4j-bom</artifactId>
+        <version>${langchain4j.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- LangChain4j：只用核心 + OpenAI 兼容适配（DeepSeek 对话、SiliconFlow embedding 都走它） -->
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-open-ai</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-configuration-processor</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
