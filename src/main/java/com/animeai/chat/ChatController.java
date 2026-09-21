@@ -54,6 +54,9 @@ public class ChatController {
             @Valid @RequestBody ChatRequest request) {
 
         assertInternalToken(token);
+        if (request.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "messages 与 message 不能同时为空");
+        }
         return chatService.stream(request);
     }
 
