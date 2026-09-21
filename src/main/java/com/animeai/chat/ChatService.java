@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.animeai.chat.dto.ChatRequest;
+import com.animeai.config.AiProperties;
 import com.animeai.model.AnimeCard;
 import com.animeai.support.Json;
 import com.animeai.tool.AnimeTools;
@@ -62,10 +63,13 @@ public class ChatService {
 
     private final StreamingChatModel streamingChatModel;
     private final AnimeTools animeTools;
+    private final AiProperties props;
 
-    public ChatService(StreamingChatModel streamingChatModel, AnimeTools animeTools) {
+    public ChatService(
+            StreamingChatModel streamingChatModel, AnimeTools animeTools, AiProperties props) {
         this.streamingChatModel = streamingChatModel;
         this.animeTools = animeTools;
+        this.props = props;
     }
 
     public SseEmitter stream(ChatRequest request) {
@@ -197,6 +201,9 @@ public class ChatService {
         payload.put(
                 "finishReason",
                 response.finishReason() == null ? null : response.finishReason().name());
+        // 带上模型名：上游（NestJS 网关）要做用量统计，但它自己不知道实际用的是哪个模型，
+        // 只有这里知道。前端忽略多余字段，所以加它不影响既有解析。
+        payload.put("model", props.chat().model());
         return payload;
     }
 
