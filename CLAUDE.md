@@ -22,6 +22,19 @@ mvn -B package -DskipTests   # 打包
 
 Maven 不在默认 PATH 时：`export PATH="$PATH:/Users/rain/Java/apache-maven-3.9.9/bin"`。
 
+## 配置
+
+配置来自项目根目录的 `.env`（由 `application.yml` 的 `spring.config.import` 加载，
+**不需要 export 到 shell**）：
+
+```bash
+cp .env.example .env   # 然后填 AI_CHAT_API_KEY
+```
+
+- `.env` 已被 `.gitignore` 排除，**绝不提交**；`.env.example` 是模板，需要更新字段时改它
+- `AI_INTERNAL_TOKEN` 必须与 `anime-chat-server` 的**完全一致**，否则转发被拒 401
+- `.env` 必须在**进程工作目录**下；在别处跑 jar 要改成绝对路径 `file:/path/to/.env[.properties]`
+
 ## 语言与风格
 
 - 注释、日志、commit、UI 文案一律中文
@@ -36,10 +49,18 @@ Maven 不在默认 PATH 时：`export PATH="$PATH:/Users/rain/Java/apache-maven-
 
 2. **本服务是无状态的 —— 不要把会话记忆做成单例 bean**
   历史由 `anime-chat-server` 的 MySQL 持有，每次请求随 `messages` 传入。
-  `ChatService` 按请求构造 `MessageWindowChatMemory` 并预置历史（窗口大小 = 历史条数 + 2，不再二次裁剪），
-  再据此构造 `AiServices` 代理。因此 `AiConfig` **不提供** `AnimeAssistant` bean。
+  `ChatService` 按请求构造 `MessageWindowChatMemory` 并预置历史，再据此构造 `AiServices` 代理。
+  因此 `AiConfig` **不提供** `AnimeAssistant` bean。
   若改回 `@MemoryId` + `chatMemoryProvider` 的单例方案，会与 MySQL 形成两份记忆，
   表现为「服务重启后模型忘了上下文、但界面还显示着历史」。
+
+  ⚠️ **记忆窗口必须按工具轮数预留槽位（这是踩过的坑）**：
+  一次工具往返占 **3** 个槽 —— `user`、`ai(toolCall)`、`toolResult`。
+  曾写成 `history.size() + 2`，单轮请求时窗口只有 2，toolResult 一进来就把 **user 挤出去**，
+  第二次请求的上下文里只剩「工具调用 + 结果」，模型于是**答非所问地重新打招呼**。
+  现在按 `history.size() + 1 + 2 * MAX_TOOL_ROUNDS` 预留，并用
+  `maxToolCallingRoundTrips(MAX_TOOL_ROUNDS)` 兜住失控循环 —— **两者是一对，改一个要改另一个**。
+  这个 bug 只有用**真实 key** 跑完整链路才暴露得出来（假 key 只回 error 事件）。
 
 3. **Jackson 2 / Jackson 3 并存 —— 这是本仓最容易踩的坑**
   - Boot 4 默认 **Jackson 3**（`tools.jackson.core:jackson-databind:3.x`）

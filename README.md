@@ -43,15 +43,16 @@
 ## 运行
 
 ```bash
-# 必需：对话模型 key（DeepSeek）
-export AI_CHAT_API_KEY=sk-xxxx
-
-# 可选：内部令牌（不设则内部接口完全不鉴权，仅限本地开发）
-export AI_INTERNAL_TOKEN=your-shared-secret
+# 配置走项目根目录的 .env（会自动加载，不必 export）
+cp .env.example .env
+#   至少填 AI_CHAT_API_KEY（DeepSeek）
+#   AI_INTERNAL_TOKEN 要与 anime-chat-server 的一致
 
 mvn spring-boot:run
 # 监听 8013
 ```
+
+`.env` 已被 `.gitignore` 排除；模板见 `.env.example`。
 
 自检：
 

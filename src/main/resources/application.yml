@@ -9,6 +9,17 @@ spring:
     virtual:
       enabled: true
 
+  # 读项目根目录的 .env（KEY=VALUE）。
+  #
+  # 之前只能靠 shell `export`，与另两个仓（dotenv 读 .env.development）体验不一致，
+  # 重启终端就丢。这里用 Boot 自带的 config data 机制加载，零额外依赖；
+  # `optional:` 保证没有 .env 时也能启动（例如生产上只用真实环境变量）。
+  #
+  # ⚠️ .env 必须放在**进程工作目录**下：`mvn spring-boot:run` 会在项目根目录找；
+  #    若在别处运行 jar，需改用绝对路径 file:/path/to/.env[.properties]。
+  config:
+    import: optional:file:.env[.properties]
+
 ai:
   # 服务间共享密钥：NestJS 转发时必须带 X-Internal-Token 头。
   # 留空 = 关闭校验（仅限本地开发），启动时会打 warn。

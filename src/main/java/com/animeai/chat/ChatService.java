@@ -52,6 +52,14 @@ public class ChatService {
     /** SSE 连接总时限，比模型侧 60s 超时留出余量 */
     private static final long EMITTER_TIMEOUT_MS = 120_000L;
 
+    /**
+     * 单轮对话最多允许多少次工具往返。
+     *
+     * 与记忆窗口大小是一对：窗口按它预留槽位，它则防止失控循环把窗口顶掉。
+     * 取值与 docs/ai-rag-practice-roadmap.md §7 的「maxToolRounds 默认 5」一致。
+     */
+    private static final int MAX_TOOL_ROUNDS = 5;
+
     private final StreamingChatModel streamingChatModel;
     private final AnimeTools animeTools;
 
@@ -85,8 +93,15 @@ public class ChatService {
             List<ChatMessage> history = toHistory(messages.subList(0, messages.size() - 1));
             String prompt = messages.get(messages.size() - 1).content();
 
-            // 只服务于本次请求的记忆；+2 给「本轮 user」与可能的工具补充留位，不做二次裁剪
-            MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(history.size() + 2);
+            // 只服务于本次请求的记忆。
+            //
+            // ⚠️ 窗口大小必须覆盖「本轮 user + 全部工具往返」，否则模型会在工具返回后**丢掉用户的问题**：
+            //    一次工具往返要占 3 个槽 —— user、ai(toolCall)、toolResult。
+            //    曾经写成 history.size() + 2，单轮请求时窗口只有 2：
+            //    toolResult 一进来就把 user 挤出去，第二次请求的上下文里只剩「工具调用+结果」，
+            //    模型于是答非所问地重新打招呼（实测踩到）。下面按最大工具轮数预留。
+            int window = history.size() + 1 + 2 * MAX_TOOL_ROUNDS;
+            MessageWindowChatMemory memory = MessageWindowChatMemory.withMaxMessages(window);
             if (!history.isEmpty()) {
                 memory.set(history);
             }
@@ -95,6 +110,9 @@ public class ChatService {
                     .streamingChatModel(streamingChatModel)
                     .chatMemory(memory)
                     .tools(animeTools)
+                    // 兜住失控的工具循环：它与上面的窗口大小是**一对**，
+                    // 少了这个上限，模型可以一直调工具，窗口再大也会被顶掉。
+                    .maxToolCallingRoundTrips(MAX_TOOL_ROUNDS)
                     .build();
 
             log.debug(
