@@ -61,6 +61,19 @@ public class ChatService {
      */
     private static final int MAX_TOOL_ROUNDS = 5;
 
+    /**
+     * 越界拒答单独用一个 finishReason，而不是伪装成 {@code STOP}。
+     *
+     * <p>理由：这一轮**没有调用模型**，把「被守卫拦下」混进正常回答里，看板上就分不出
+     * 「模型答的」和「前端式回绝」，也就无法评估守卫的命中率与误伤率。
+     * 上游 NestJS 网关只把 finishReason 当字符串透传进埋点（前端忽略未知值），
+     * 所以新增取值是向后兼容的。
+     */
+    private static final String FINISH_REASON_SCOPE_REJECTED = "SCOPE_REJECTED";
+
+    /** 被拦截时只记前 60 字，避免把整段用户输入写进日志 */
+    private static final int LOG_SNIPPET_MAX = 60;
+
     private final StreamingChatModel streamingChatModel;
     private final AnimeTools animeTools;
     private final AiProperties props;
@@ -93,9 +106,24 @@ public class ChatService {
             return emitter;
         }
 
+        String prompt = messages.get(messages.size() - 1).content();
+
+        // 话题范围守卫：在**发起模型调用之前**判定，命中就直接回绝 —— 全程 0 token。
+        //
+        // 只把「本轮用户输入」交给守卫，不看 history：把历史拉进来会让规则不再可判定
+        // （任何跑题请求都能靠「上一轮聊过番」混过去），详见 TopicScopeGuard 的类注释。
+        TopicScopeGuard.Decision scope = TopicScopeGuard.judge(prompt);
+        if (!scope.allowed()) {
+            log.info(
+                    "话题范围拦截 conversationId={} reason={} 输入长度={}",
+                    conversationId, scope.reason(), prompt.length());
+            log.debug("被拦截的输入片段: {}", abbreviate(prompt));
+            writeScopeRejection(writer, conversationId, scope.reason());
+            return emitter;
+        }
+
         try {
             List<ChatMessage> history = toHistory(messages.subList(0, messages.size() - 1));
-            String prompt = messages.get(messages.size() - 1).content();
 
             // 只服务于本次请求的记忆。
             //
@@ -151,6 +179,61 @@ public class ChatService {
         }
 
         return emitter;
+    }
+
+    /**
+     * 走**正常 SSE 流**把拒答文案发出去 —— 不是 HTTP 4xx，也不发 {@code error} 事件。
+     *
+     * <p>三点都是刻意的：
+     * <ol>
+     *   <li><b>不是错误</b>：拒答是正常业务结果。走 4xx 的话前端只有一套「出错了」的展示，
+     *       而网关还会把它记成 {@code status=error} 的埋点，把「守卫拦下」污染成「服务故障」。</li>
+     *   <li><b>仍然发 usage</b>：前端与网关都按「text-delta → usage → done」认定一轮完整结束。
+     *       值全是 0 —— 这一轮确实一个 token 都没花，这正是前置拦截的意义。</li>
+     *   <li><b>done 里 model 为 null</b>：没有调用任何模型。填上配置里的模型名会让人误以为
+     *       模型参与过（网关那边只在 {@code typeof model === 'string'} 时取值，null 会被自然忽略）。</li>
+     * </ol>
+     */
+    private void writeScopeRejection(
+            SseWriter writer, String conversationId, TopicScopeGuard.Reason reason) {
+        writer.send(SseEvent.TEXT_DELTA, Map.of("text", scopeRejectionText(reason)));
+        writer.send(
+                SseEvent.USAGE,
+                Map.of("promptTokens", 0, "completionTokens", 0, "totalTokens", 0));
+        writer.send(SseEvent.DONE, scopeDonePayload(conversationId));
+        writer.complete();
+    }
+
+    private Map<String, Object> scopeDonePayload(String conversationId) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("conversationId", conversationId);
+        payload.put("finishReason", FINISH_REASON_SCOPE_REJECTED);
+        payload.put("model", null);
+        return payload;
+    }
+
+    /**
+     * 拒答文案。要求：短、不爹味、说清只聊动漫，并给一个**可执行**的引导。
+     *
+     * <p>按原因分两版：越权/身份类是「不参与这类设定」，跑题类是「换个动漫问题」。
+     * 只有前三种 reason 会走到这里（EMPTY / ANIME_SIGNAL / NO_SIGNAL 都是放行）。
+     */
+    private static String scopeRejectionText(TopicScopeGuard.Reason reason) {
+        return switch (reason) {
+            case INJECTION_ATTEMPT, IDENTITY_PROBE ->
+                    "我只聊动漫相关的事，别的设定就不参与了～"
+                            + "想找番的话，直接说类型、年份或「类似某某」就行。";
+            default ->
+                    "我只能聊动漫相关的话题～想看什么类型？"
+                            + "给个关键词或年份就行，比如「2020 年之后的恋爱番」。";
+        };
+    }
+
+    private static String abbreviate(String text) {
+        String flat = text.replaceAll("\\s+", " ").trim();
+        return flat.length() <= LOG_SNIPPET_MAX
+                ? flat
+                : flat.substring(0, LOG_SNIPPET_MAX) + "…";
     }
 
     /** 上游传来的 role/content 映射为 LangChain4j 的消息类型；未知 role 当作用户消息。 */
