@@ -28,6 +28,35 @@ python3 eval/run_eval.py --json eval/out.json  # 落盘，便于两次运行对�
 脚本**不因召回不全而返回非零**：它输出的是「测量结果」而不是「断言」，
 召回率低是要改进的基线数据，不是脚本失败。
 
+## 另外两个脚本
+
+```bash
+python3 eval/verify_ingest.py       # 验收③幂等 + ④增量（9 条断言，用虚构 id，自清理）
+python3 eval/measure_import.py      # 验收⑤冷启动吞吐（抽样真实语料，自清理）
+```
+
+`verify_ingest.py` 用虚构 `subjectId`（默认 990001 起）直接传 `documents`，
+所以能**精确控制内容变化**：同样的内容重导 → `upserted=0`（幂等）；
+只改其中一条 → `upserted=1`（增量，且另一条不动）。
+这两个数字是唯一能区分「真的重算了向量」与「全部跳过」的信号，
+而只跑一次导入是证明不了的。
+
+`measure_import.py` 用**虚构 id + 真实语料文本**测吞吐：若用真实 id 传回同样文本，
+内容 hash 未变会被跳过，**测不到任何 embedding 耗时**——会让冷启动测量悄悄变成测了个空。
+
+## M2 验收标准达成情况
+
+| 标准 | 结果 |
+| --- | --- |
+| ① ≥3000 条 + payload 索引 | ✅ 3000 点，`status=green`，1024 维 Cosine |
+| ② 查询结果合理 | ✅ 12 条 golden set：Hit Rate@10 = **91.7%**，MRR = **0.6285** |
+| ③ 幂等 | ✅ 重复导入 `upserted=0`（`verify_ingest.py`） |
+| ④ 增量 | ✅ 改一条只更新该条 `upserted=1`（`verify_ingest.py`） |
+| ⑤ 冷启动耗时与花费 | ✅ 实测 300 条 / 161650 字 / **3.2s**（11ms/条），外推 3000 条 ≈ 0.5 分钟 |
+
+> ⑤ 的耗时数字取决于 SiliconFlow 当时速度与网络，换时间跑会有出入；
+> 花费见 `docs/ai-rag-practice-roadmap.md` §3.6② 的 token 估算（按字符规模核对过）。
+
 ## 基线（2026-10-14，Bangumi 排名前 3000 条语料）
 
 见 `baseline-2026-10-14.json`。
