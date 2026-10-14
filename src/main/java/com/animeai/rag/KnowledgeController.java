@@ -13,7 +13,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -23,7 +22,6 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/internal")
 @ConditionalOnExpression("'${ai.embedding.api-key:}' != ''")
 public class KnowledgeController {
-    private static final String TOKEN_HEADER = "X-Internal-Token";
     private final KnowledgeService knowledge;
     private final CorpusLoader corpus;
     private final AiProperties props;
@@ -35,10 +33,7 @@ public class KnowledgeController {
     }
 
     @PostMapping("/retrieve")
-    public RetrieveResponse retrieve(
-            @RequestHeader(value = TOKEN_HEADER, required = false) String token,
-            @Valid @RequestBody RetrieveRequest request) {
-        assertToken(token);
+    public RetrieveResponse retrieve(@Valid @RequestBody RetrieveRequest request) {
         int topK = request.topK() == null ? props.qdrant().topK() : request.topK();
         List<Map<String, Object>> hits = knowledge.retrieve(request.query(), topK, request.filters())
                 .stream().map(hit -> Map.<String, Object>of(
@@ -48,24 +43,33 @@ public class KnowledgeController {
     }
 
     @PostMapping("/knowledge/ingest")
-    public Map<String, Object> ingest(
-            @RequestHeader(value = TOKEN_HEADER, required = false) String token,
-            @RequestBody IngestRequest request) {
-        assertToken(token);
-        boolean suppliedDocuments = request.documents() != null && !request.documents().isEmpty();
+    public Map<String, Object> ingest(@RequestBody IngestRequest request) {
+        boolean suppliedDocuments = request.documents() != null;
+        // 传了空数组是**调用方的意图矛盾**：不传才会走默认语料源。
+        // 不报错的话它会静默走默认源（甚至真的导入成功），与调用方预期不符。
+        if (suppliedDocuments && request.documents().isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "documents 为空数组；不传该字段才会走默认语料源（bangumi/mysql）");
+        }
         boolean useBangumi = "bangumi".equalsIgnoreCase(request.source())
                 || (!StringUtils.hasText(request.source()) && !StringUtils.hasText(props.corpus().jdbcUrl()));
         String source = suppliedDocuments ? "request" : useBangumi ? "bangumi" : "mysql";
         List<KnowledgeDocument> documents = suppliedDocuments
                 ? request.documents()
                 : useBangumi ? corpus.loadFromBangumi(request.limit()) : corpus.loadFromMySql(request.limit());
-        return Map.of("upserted", knowledge.ingest(documents), "loaded", documents.size(), "source", source);
-    }
-
-    private void assertToken(String token) {
-        if (StringUtils.hasText(props.internalToken()) && !props.internalToken().equals(token)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "内部令牌无效");
+        /*
+         * 0 条**不该被当成一次成功的导入**。
+         * 本地 anime 表为空、jdbc-url 配了但库是空的、Bangumi 不可达，都会走到这里，
+         * 而它返回的 upserted=0 与「幂等跳过」长得**一模一样**（区别只在 loaded=0）——
+         * 实测踩过：.env.example 里那行 AI_CORPUS_JDBC_URL 模板一旦被取消注释，
+         * 而 anime 表是空的，导入就“成功”地什么也没导。
+         */
+        if (documents.isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "语料源 " + source + " 返回 0 条，未导入任何数据；请检查 ai.corpus 配置或语料源是否可达");
         }
+        return Map.of("upserted", knowledge.ingest(documents), "loaded", documents.size(), "source", source);
     }
 
     public record RetrieveRequest(@NotBlank String query, Integer topK, Map<String, Object> filters) {}
