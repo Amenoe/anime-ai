@@ -1,0 +1,799 @@
+{
+  "topk": 10,
+  "summary": {
+    "total": 12,
+    "hits": 11,
+    "hit_rate": 0.9167,
+    "mrr": 0.6285
+  },
+  "by_category": {
+    "title": {
+      "total": 3,
+      "hits": 3,
+      "hit_rate": 1.0,
+      "mrr": 1.0
+    },
+    "concept": {
+      "total": 6,
+      "hits": 5,
+      "hit_rate": 0.8333,
+      "mrr": 0.4931
+    },
+    "filter": {
+      "total": 2,
+      "hits": 2,
+      "hit_rate": 1.0,
+      "mrr": 0.2917
+    },
+    "synonym": {
+      "total": 1,
+      "hits": 1,
+      "hit_rate": 1.0,
+      "mrr": 1.0
+    }
+  },
+  "queries": [
+    {
+      "id": "T1",
+      "category": "title",
+      "query": "命运石之门",
+      "expect": [
+        10380,
+        129807,
+        23119
+      ],
+      "hit": true,
+      "rank": 1,
+      "top": [
+        {
+          "subject_id": 23119,
+          "name": "命运石之门 负荷领域的既视感",
+          "score": 0.6354
+        },
+        {
+          "subject_id": 10380,
+          "name": "命运石之门",
+          "score": 0.6246
+        },
+        {
+          "subject_id": 129807,
+          "name": "命运石之门 0",
+          "score": 0.6141
+        },
+        {
+          "subject_id": 115660,
+          "name": "命运石之门 聪明睿智的认知计算",
+          "score": 0.6088
+        },
+        {
+          "subject_id": 214799,
+          "name": "宝石之国",
+          "score": 0.5146
+        },
+        {
+          "subject_id": 402128,
+          "name": "命运-奇异赝品 黎明低语",
+          "score": 0.505
+        },
+        {
+          "subject_id": 332261,
+          "name": "JOJO的奇妙冒险 石之海",
+          "score": 0.5002
+        },
+        {
+          "subject_id": 9350,
+          "name": "意外的幸运签",
+          "score": 0.4801
+        },
+        {
+          "subject_id": 83402,
+          "name": "Fate/kaleid liner 魔法少女☆伊莉雅 2wei!",
+          "score": 0.4787
+        },
+        {
+          "subject_id": 395782,
+          "name": "JOJO的奇妙冒险 石之海 第3部分",
+          "score": 0.4767
+        }
+      ]
+    },
+    {
+      "id": "T2",
+      "category": "title",
+      "query": "白箱",
+      "expect": [
+        110467
+      ],
+      "hit": true,
+      "rank": 1,
+      "top": [
+        {
+          "subject_id": 110467,
+          "name": "白箱",
+          "score": 0.5946
+        },
+        {
+          "subject_id": 244761,
+          "name": "剧场版 白箱",
+          "score": 0.563
+        },
+        {
+          "subject_id": 6326,
+          "name": "平衡",
+          "score": 0.4823
+        },
+        {
+          "subject_id": 69496,
+          "name": "白色相簿2",
+          "score": 0.4672
+        },
+        {
+          "subject_id": 452,
+          "name": "哆啦A梦：大雄与白金迷宫",
+          "score": 0.4473
+        },
+        {
+          "subject_id": 993,
+          "name": "白色相簿",
+          "score": 0.4405
+        },
+        {
+          "subject_id": 123256,
+          "name": "超级肥皂",
+          "score": 0.4317
+        },
+        {
+          "subject_id": 10843,
+          "name": "白兔糖",
+          "score": 0.4314
+        },
+        {
+          "subject_id": 32318,
+          "name": "白熊咖啡馆",
+          "score": 0.431
+        },
+        {
+          "subject_id": 11598,
+          "name": "×××HOLiC・笼 徒梦",
+          "score": 0.4309
+        }
+      ]
+    },
+    {
+      "id": "T3",
+      "category": "title",
+      "query": "虫师",
+      "expect": [
+        340
+      ],
+      "hit": true,
+      "rank": 1,
+      "top": [
+        {
+          "subject_id": 340,
+          "name": "虫师",
+          "score": 0.6808
+        },
+        {
+          "subject_id": 92705,
+          "name": "虫师 续章",
+          "score": 0.6729
+        },
+        {
+          "subject_id": 88473,
+          "name": "虫师 特別篇 蚀日之翳",
+          "score": 0.6555
+        },
+        {
+          "subject_id": 106207,
+          "name": "虫师 续章 第2部分",
+          "score": 0.6299
+        },
+        {
+          "subject_id": 120700,
+          "name": "虫师 特别篇 铃之雫",
+          "score": 0.6137
+        },
+        {
+          "subject_id": 95781,
+          "name": "昆虫总动员",
+          "score": 0.4957
+        },
+        {
+          "subject_id": 237,
+          "name": "攻壳机动队",
+          "score": 0.4722
+        },
+        {
+          "subject_id": 69484,
+          "name": "Little Busters! 〜Refrain〜",
+          "score": 0.4677
+        },
+        {
+          "subject_id": 1426,
+          "name": "幻灵镇魂曲",
+          "score": 0.4673
+        },
+        {
+          "subject_id": 38040,
+          "name": "Little Busters!",
+          "score": 0.467
+        }
+      ]
+    },
+    {
+      "id": "C1",
+      "category": "concept",
+      "query": "赛博朋克 义体 公安",
+      "expect": [
+        237,
+        324,
+        326,
+        238
+      ],
+      "hit": true,
+      "rank": 8,
+      "top": [
+        {
+          "subject_id": 45904,
+          "name": "逮捕令 OVA",
+          "score": 0.4609
+        },
+        {
+          "subject_id": 309311,
+          "name": "赛博朋克：边缘行者",
+          "score": 0.4545
+        },
+        {
+          "subject_id": 26453,
+          "name": "勇者警察",
+          "score": 0.4505
+        },
+        {
+          "subject_id": 185317,
+          "name": "乌龙派出所 THE FINAL 两津勘吉最后的一天",
+          "score": 0.4482
+        },
+        {
+          "subject_id": 239924,
+          "name": "心理测量者 Sinners of the System Case.2 First Guardian",
+          "score": 0.4415
+        },
+        {
+          "subject_id": 2166,
+          "name": "乌龙派出所",
+          "score": 0.4407
+        },
+        {
+          "subject_id": 2074,
+          "name": "逮捕令",
+          "score": 0.4357
+        },
+        {
+          "subject_id": 326,
+          "name": "攻壳机动队 S.A.C. 2nd GIG",
+          "score": 0.4353
+        },
+        {
+          "subject_id": 66376,
+          "name": "银河女警花 剧场版",
+          "score": 0.4309
+        },
+        {
+          "subject_id": 106177,
+          "name": "终极蜘蛛侠 第三季：蛛网勇士",
+          "score": 0.4288
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "category": "concept",
+      "query": "催泪 家族 治愈",
+      "expect": [
+        876,
+        51
+      ],
+      "hit": false,
+      "rank": null,
+      "top": [
+        {
+          "subject_id": 299554,
+          "name": "亚当斯一家",
+          "score": 0.5375
+        },
+        {
+          "subject_id": 61649,
+          "name": "BB有心事",
+          "score": 0.528
+        },
+        {
+          "subject_id": 8622,
+          "name": "姆明一族",
+          "score": 0.5271
+        },
+        {
+          "subject_id": 92412,
+          "name": "蜡笔小新：决一胜负！逆袭的机器人爸爸",
+          "score": 0.5225
+        },
+        {
+          "subject_id": 112398,
+          "name": "如此美好的一天",
+          "score": 0.5201
+        },
+        {
+          "subject_id": 69484,
+          "name": "Little Busters! 〜Refrain〜",
+          "score": 0.52
+        },
+        {
+          "subject_id": 842,
+          "name": "东京教父",
+          "score": 0.518
+        },
+        {
+          "subject_id": 3152,
+          "name": "备长炭",
+          "score": 0.5162
+        },
+        {
+          "subject_id": 4542,
+          "name": "迷糊天使",
+          "score": 0.513
+        },
+        {
+          "subject_id": 47144,
+          "name": "麦兜故事",
+          "score": 0.5112
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "category": "concept",
+      "query": "动画制作 职场 励志",
+      "expect": [
+        110467,
+        25665,
+        150775,
+        174142,
+        247086
+      ],
+      "hit": true,
+      "rank": 1,
+      "top": [
+        {
+          "subject_id": 25665,
+          "name": "动画制作进行 黑美",
+          "score": 0.6813
+        },
+        {
+          "subject_id": 176599,
+          "name": "WWW.迷糊餐厅",
+          "score": 0.6156
+        },
+        {
+          "subject_id": 247086,
+          "name": "职场小烈",
+          "score": 0.607
+        },
+        {
+          "subject_id": 174142,
+          "name": "编舟记",
+          "score": 0.6063
+        },
+        {
+          "subject_id": 23325,
+          "name": "雇工人生",
+          "score": 0.6057
+        },
+        {
+          "subject_id": 223563,
+          "name": "酷爱电影的庞波小姐",
+          "score": 0.6038
+        },
+        {
+          "subject_id": 2725,
+          "name": "梦色蛋糕师",
+          "score": 0.6026
+        },
+        {
+          "subject_id": 114685,
+          "name": "可塑性记忆",
+          "score": 0.5971
+        },
+        {
+          "subject_id": 220989,
+          "name": "动画师和动画",
+          "score": 0.5956
+        },
+        {
+          "subject_id": 278828,
+          "name": "非洲的动物上班族",
+          "score": 0.5911
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "category": "concept",
+      "query": "心理惊悚 虚实交错",
+      "expect": [
+        839,
+        843,
+        37685
+      ],
+      "hit": true,
+      "rank": 1,
+      "top": [
+        {
+          "subject_id": 37685,
+          "name": "心理测量者",
+          "score": 0.5661
+        },
+        {
+          "subject_id": 103470,
+          "name": "鬼妈妈",
+          "score": 0.5586
+        },
+        {
+          "subject_id": 843,
+          "name": "妄想代理人",
+          "score": 0.554
+        },
+        {
+          "subject_id": 203861,
+          "name": "超自然9人组",
+          "score": 0.5425
+        },
+        {
+          "subject_id": 103906,
+          "name": "心理测量者 新编集版",
+          "score": 0.5403
+        },
+        {
+          "subject_id": 14749,
+          "name": "京骚戏画",
+          "score": 0.5372
+        },
+        {
+          "subject_id": 328674,
+          "name": "夏日幽灵",
+          "score": 0.5363
+        },
+        {
+          "subject_id": 373267,
+          "name": "间谍过家家 第2部分",
+          "score": 0.5331
+        },
+        {
+          "subject_id": 812,
+          "name": "剧场版 空之境界 第二章 杀人考察（前）",
+          "score": 0.5326
+        },
+        {
+          "subject_id": 847,
+          "name": "蜂蜜与四叶草",
+          "score": 0.5322
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "category": "concept",
+      "query": "将棋 日常 治愈",
+      "expect": [
+        211567
+      ],
+      "hit": true,
+      "rank": 3,
+      "top": [
+        {
+          "subject_id": 605,
+          "name": "棋魂",
+          "score": 0.5685
+        },
+        {
+          "subject_id": 147068,
+          "name": "3月的狮子",
+          "score": 0.5529
+        },
+        {
+          "subject_id": 211567,
+          "name": "3月的狮子 第二季",
+          "score": 0.5415
+        },
+        {
+          "subject_id": 1038,
+          "name": "超智游戏",
+          "score": 0.5414
+        },
+        {
+          "subject_id": 208109,
+          "name": "棋魂 特别篇·裁决的一局！绽放吧 往昔之花！！",
+          "score": 0.5276
+        },
+        {
+          "subject_id": 276,
+          "name": "幸运星",
+          "score": 0.5141
+        },
+        {
+          "subject_id": 234349,
+          "name": "卫宫家今天的饭",
+          "score": 0.5124
+        },
+        {
+          "subject_id": 24790,
+          "name": "男子高中生的日常",
+          "score": 0.5118
+        },
+        {
+          "subject_id": 195711,
+          "name": "和女儿的日常",
+          "score": 0.5118
+        },
+        {
+          "subject_id": 174142,
+          "name": "编舟记",
+          "score": 0.5082
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "category": "concept",
+      "query": "明治维新 剑客 悲剧",
+      "expect": [
+        1728
+      ],
+      "hit": true,
+      "rank": 2,
+      "top": [
+        {
+          "subject_id": 2712,
+          "name": "浪客剑心",
+          "score": 0.5564
+        },
+        {
+          "subject_id": 1728,
+          "name": "浪客剑心 追忆篇",
+          "score": 0.5448
+        },
+        {
+          "subject_id": 13553,
+          "name": "浪客剑心 星霜篇",
+          "score": 0.5137
+        },
+        {
+          "subject_id": 4010,
+          "name": "剑豪生死斗",
+          "score": 0.4609
+        },
+        {
+          "subject_id": 696,
+          "name": "剑风传奇",
+          "score": 0.4561
+        },
+        {
+          "subject_id": 45241,
+          "name": "剑风传奇 黄金时代篇III 降临",
+          "score": 0.4539
+        },
+        {
+          "subject_id": 2083,
+          "name": "双面骑士",
+          "score": 0.4511
+        },
+        {
+          "subject_id": 49424,
+          "name": "金田一少年之事件簿 歌剧院杀人事件",
+          "score": 0.4481
+        },
+        {
+          "subject_id": 1930,
+          "name": "新撰组异闻录 铁",
+          "score": 0.4463
+        },
+        {
+          "subject_id": 4328,
+          "name": "江户盗贼团五叶",
+          "score": 0.4405
+        }
+      ]
+    },
+    {
+      "id": "F1",
+      "category": "filter",
+      "query": "太空歌剧 赏金猎人 爵士乐",
+      "expect": [
+        253
+      ],
+      "hit": true,
+      "rank": 3,
+      "top": [
+        {
+          "subject_id": 66244,
+          "name": "幻想曲2000",
+          "score": 0.5433
+        },
+        {
+          "subject_id": 64086,
+          "name": "幻想曲",
+          "score": 0.5386
+        },
+        {
+          "subject_id": 253,
+          "name": "星际牛仔",
+          "score": 0.5361
+        },
+        {
+          "subject_id": 61479,
+          "name": "星银岛",
+          "score": 0.5288
+        },
+        {
+          "subject_id": 66243,
+          "name": "钟楼怪人",
+          "score": 0.5185
+        },
+        {
+          "subject_id": 183590,
+          "name": "欢乐好声音",
+          "score": 0.5183
+        },
+        {
+          "subject_id": 136856,
+          "name": "歌剧是什么？",
+          "score": 0.5085
+        },
+        {
+          "subject_id": 60493,
+          "name": "南方公园剧场版",
+          "score": 0.5083
+        },
+        {
+          "subject_id": 2504,
+          "name": "剧场版 超时空要塞F 虚空歌姬",
+          "score": 0.5074
+        },
+        {
+          "subject_id": 66376,
+          "name": "银河女警花 剧场版",
+          "score": 0.5072
+        }
+      ]
+    },
+    {
+      "id": "F2",
+      "category": "filter",
+      "query": "政治 阴谋 机甲",
+      "expect": [
+        321
+      ],
+      "hit": true,
+      "rank": 4,
+      "top": [
+        {
+          "subject_id": 30223,
+          "name": "装甲骑兵 佩鲁森档案 剧场版",
+          "score": 0.5191
+        },
+        {
+          "subject_id": 286,
+          "name": "机动战士高达00",
+          "score": 0.5044
+        },
+        {
+          "subject_id": 10379,
+          "name": "装甲骑兵VOTOMS",
+          "score": 0.4908
+        },
+        {
+          "subject_id": 321,
+          "name": "机动警察剧场版2 和平保卫战",
+          "score": 0.4849
+        },
+        {
+          "subject_id": 10416,
+          "name": "机魂末世录",
+          "score": 0.4825
+        },
+        {
+          "subject_id": 3113,
+          "name": "机动战士高达UC",
+          "score": 0.4823
+        },
+        {
+          "subject_id": 8484,
+          "name": "机动警察",
+          "score": 0.4821
+        },
+        {
+          "subject_id": 1010,
+          "name": "机动战士高达00 第二季",
+          "score": 0.4769
+        },
+        {
+          "subject_id": 48746,
+          "name": "攻壳机动队 S.A.C. 2nd GIG 个别的十一人",
+          "score": 0.4765
+        },
+        {
+          "subject_id": 9622,
+          "name": "机动战士Z高达",
+          "score": 0.4764
+        }
+      ]
+    },
+    {
+      "id": "S1",
+      "category": "synonym",
+      "query": "时间循环 悬疑",
+      "expect": [
+        10380,
+        129807,
+        23119,
+        326895,
+        526448,
+        345980,
+        242
+      ],
+      "hit": true,
+      "rank": 1,
+      "top": [
+        {
+          "subject_id": 526448,
+          "name": "古诺希亚",
+          "score": 0.5355
+        },
+        {
+          "subject_id": 16805,
+          "name": "时间飞船",
+          "score": 0.5259
+        },
+        {
+          "subject_id": 100526,
+          "name": "黑执事 马戏团篇",
+          "score": 0.5082
+        },
+        {
+          "subject_id": 242,
+          "name": "穿越时空的少女",
+          "score": 0.507
+        },
+        {
+          "subject_id": 345980,
+          "name": "四叠半时光机布鲁斯",
+          "score": 0.5069
+        },
+        {
+          "subject_id": 294980,
+          "name": "黑盒",
+          "score": 0.5034
+        },
+        {
+          "subject_id": 320224,
+          "name": "时光代理人",
+          "score": 0.5009
+        },
+        {
+          "subject_id": 131224,
+          "name": "探戈",
+          "score": 0.4974
+        },
+        {
+          "subject_id": 84122,
+          "name": "时光钟摆",
+          "score": 0.4962
+        },
+        {
+          "subject_id": 326895,
+          "name": "夏日重现",
+          "score": 0.4953
+        }
+      ]
+    }
+  ]
+}
