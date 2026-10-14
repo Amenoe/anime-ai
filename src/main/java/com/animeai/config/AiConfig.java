@@ -5,7 +5,7 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -40,16 +40,15 @@ public class AiConfig {
      * 这样 M1 只配 DeepSeek key 就能跑（SiliconFlow 的 key 到 M2 再补）。
      */
     @Bean
-    @ConditionalOnProperty(prefix = "ai.embedding", name = "api-key")
+    @ConditionalOnExpression("'${ai.embedding.api-key:}' != ''")
     public EmbeddingModel embeddingModel(AiProperties props) {
         AiProperties.Embedding emb = props.embedding();
-        OpenAiEmbeddingModel.OpenAiEmbeddingModelBuilder builder = OpenAiEmbeddingModel.builder()
+        // BGE-M3 的输出维度固定为 1024。SiliconFlow 兼容接口不接受额外的 dimensions 参数，
+        // 传入 dimensions=1024 会返回 20015「The parameter is invalid」。Qdrant 维度仍由配置声明。
+        return OpenAiEmbeddingModel.builder()
                 .baseUrl(emb.baseUrl())
                 .apiKey(emb.apiKey())
-                .modelName(emb.model());
-        if (emb.dimensions() != null) {
-            builder.dimensions(emb.dimensions());
-        }
-        return builder.build();
+                .modelName(emb.model())
+                .build();
     }
 }

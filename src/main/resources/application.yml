@@ -44,6 +44,19 @@ ai:
     model: ${AI_EMBEDDING_MODEL:BAAI/bge-m3}
     dimensions: 1024
 
+  # M2：Qdrant REST API。默认使用本机 docker-compose 暴露的 6333 端口。
+  qdrant:
+    base-url: ${AI_QDRANT_URL:http://127.0.0.1:6333}
+    collection: ${AI_QDRANT_COLLECTION:anime_knowledge}
+    top-k: ${AI_QDRANT_TOP_K:10}
+
+  # M2：只读 anime 表。未配置时仍可启动 M1；配置后可调用 ingest 接口。
+  corpus:
+    jdbc-url: ${AI_CORPUS_JDBC_URL:}
+    username: ${AI_CORPUS_DB_USERNAME:}
+    password: ${AI_CORPUS_DB_PASSWORD:}
+    batch-size: ${AI_CORPUS_BATCH_SIZE:64}
+
   # Bangumi 公开 API（需带 User-Agent）
   bangumi:
     base-url: ${AI_BANGUMI_BASE_URL:https://api.bgm.tv}

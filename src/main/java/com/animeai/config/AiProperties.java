@@ -11,7 +11,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * {@code AI_CHAT_API_KEY} / {@code AI_EMBEDDING_API_KEY}。
  */
 @ConfigurationProperties(prefix = "ai")
-public record AiProperties(Chat chat, Embedding embedding, Bangumi bangumi, String internalToken) {
+public record AiProperties(
+        Chat chat, Embedding embedding, Bangumi bangumi, Qdrant qdrant, Corpus corpus, String internalToken) {
 
     /** 对话模型（DeepSeek，OpenAI 兼容）。 */
     public record Chat(
@@ -28,6 +29,11 @@ public record AiProperties(Chat chat, Embedding embedding, Bangumi bangumi, Stri
      * <p>注意：DeepSeek 没有 embedding 接口，所以这里必然是**第二家**供应商。
      */
     public record Embedding(String baseUrl, String apiKey, String model, Integer dimensions) {}
+
+    public record Qdrant(String baseUrl, String collection, Integer topK) {}
+
+    /** 本地 anime 表连接；不配置 jdbc-url 时不启用自动入库。 */
+    public record Corpus(String jdbcUrl, String username, String password, Integer batchSize) {}
 
     /** Bangumi 公开 API。 */
     public record Bangumi(String baseUrl, String userAgent, Duration timeout) {}
