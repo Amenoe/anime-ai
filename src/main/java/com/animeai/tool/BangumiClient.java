@@ -176,6 +176,22 @@ public class BangumiClient {
         }
     }
 
+    /** 用于离线知识库导入：保留完整简介和完整标签，不裁成对话卡片格式。 */
+    public List<Subject> browseKnowledgeSubjects(int limit, int offset) {
+        String raw = client.get()
+                .uri(uriBuilder -> uriBuilder.path("/v0/subjects")
+                        .queryParam("type", TYPE_ANIME).queryParam("sort", "rank")
+                        .queryParam("limit", limit).queryParam("offset", offset).build())
+                .retrieve().body(String.class);
+        try {
+            PagedResponse response = Json.MAPPER.readValue(raw, PagedResponse.class);
+            return response == null || response.data() == null ? List.of() : response.data();
+        } catch (Exception e) {
+            log.warn("bangumi 知识库分页解析失败: {} | 原始响应前 800 字: {}", e.toString(), abbreviate(raw, 800));
+            return List.of();
+        }
+    }
+
     private static AnimeCard toCard(Subject subject) {
         Double score = subject.rating() == null ? null : subject.rating().score();
         Integer rank = subject.rating() == null ? null : subject.rating().rank();
@@ -243,6 +259,7 @@ public class BangumiClient {
             Rating rating,
             String date,
             List<Tag> tags,
+            @JsonProperty("meta_tags") List<String> metaTags,
             String summary) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)

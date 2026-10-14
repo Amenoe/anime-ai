@@ -1,8 +1,11 @@
 package com.animeai.tool;
 
 import java.util.List;
+import java.util.Map;
 
 import com.animeai.model.AnimeCard;
+import com.animeai.rag.KnowledgeHit;
+import com.animeai.rag.KnowledgeService;
 
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
@@ -10,6 +13,7 @@ import dev.langchain4j.agent.tool.Tool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * 暴露给大模型的番剧检索工具。
@@ -29,9 +33,11 @@ public class AnimeTools {
     private static final String FALLBACK_KEYWORD = "动画";
 
     private final BangumiClient bangumi;
+    private final KnowledgeService knowledge;
 
-    public AnimeTools(BangumiClient bangumi) {
+    public AnimeTools(BangumiClient bangumi, ObjectProvider<KnowledgeService> knowledge) {
         this.bangumi = bangumi;
+        this.knowledge = knowledge.getIfAvailable();
     }
 
     @Tool(name = "search_anime", value = """
@@ -61,6 +67,49 @@ public class AnimeTools {
                 effectiveKeyword, tags, metaTags, minRating, yearFrom, sort, effectiveLimit, 0);
         log.debug("searchAnime 命中 {} 条", cards.size());
         return cards;
+    }
+
+    @Tool(name = "search_knowledge", value = """
+            用语义向量检索番剧简介和标签，适合用户想不起作品名、只记得人物设定、剧情或氛围的场景。
+            例如「主角是红发剑士，结局很虐」「时间循环的悬疑番」。
+            已知作品名、评分、年份或榜单排序请使用 search_anime / browse_anime。
+            如果没有相关结果，不要编造番剧名称。
+            """)
+    public List<AnimeCard> searchKnowledge(
+            @P("自然语言描述，例如「时间循环 悬疑」或「红发剑士 结局很虐」") String query,
+            @P(value = "返回条数，默认 8，最多 20", required = false) Integer limit) {
+        if (knowledge == null) {
+            log.warn("search_knowledge 被调用但 embedding 未配置");
+            return List.of();
+        }
+        int effectiveLimit = normalizeLimit(limit);
+        List<KnowledgeHit> hits = knowledge.retrieve(query, effectiveLimit, Map.of());
+        return hits.stream().map(AnimeTools::toCard).toList();
+    }
+
+    private static AnimeCard toCard(KnowledgeHit hit) {
+        Map<String, Object> p = hit.payload();
+        return new AnimeCard(
+                hit.subjectId(),
+                stringValue(p.get("name"), "#" + hit.subjectId()),
+                stringValue(p.get("name_cn"), stringValue(p.get("name"), "#" + hit.subjectId())),
+                stringValue(p.get("cover"), null),
+                numberValue(p.get("rating")),
+                integerValue(p.get("rank")),
+                stringValue(p.get("date"), null),
+                stringList(p.get("tags")),
+                hit.text());
+    }
+
+    private static String stringValue(Object value, String fallback) {
+        return value == null || String.valueOf(value).isBlank() ? fallback : String.valueOf(value);
+    }
+
+    private static Double numberValue(Object value) { return value instanceof Number n ? n.doubleValue() : null; }
+    private static Integer integerValue(Object value) { return value instanceof Number n ? n.intValue() : null; }
+    private static List<String> stringList(Object value) {
+        if (!(value instanceof List<?> list)) return List.of();
+        return list.stream().map(String::valueOf).toList();
     }
 
     @Tool(name = "browse_anime", value = """
