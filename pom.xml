@@ -86,15 +86,15 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
       </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <configuration>
-          <source>21</source>
-          <target>21</target>
-          <compilerArgs>--enable-preview</compilerArgs>
-        </configuration>
-      </plugin>
+      <!--
+        刻意不在这里配 maven-compiler-plugin：父 POM 已按 java.version=21 配好编译目标。
+        曾在这里加过 enable preview 的编译参数，后果不是「没生效」而是 mvn clean compile 直接失败：
+        「源发行版 21 与 enable preview 一起使用时无效（仅发行版 25 支持预览语言功能）」
+        —— 预览特性绑定具体 JDK 版本，JDK 25 的 javac 不能为 source 21 启用它。
+        更隐蔽的是 target 里已有旧 class 时 Maven 会跳过增量编译，
+        于是 mvn package / mvn test 看起来全绿，直到有人改了源文件或 clean 才炸。
+        结论：判断编译是否通过必须用 mvn clean，不要拿不带 clean 的输出下结论。
+      -->
     </plugins>
   </build>
 </project>
