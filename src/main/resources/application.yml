@@ -5,6 +5,16 @@ server:
 spring:
   application:
     name: anime-ai
+  web:
+    error:
+      # ⚠️ Spring Boot 4 把 server.error.* 迁到了 spring.web.error.*，
+      # 旧名被标记为 deprecation level=error，写了**静默不生效**（实测踩过：
+      # 写成 server.error.include-message 后响应体依然只有
+      # {"status":400,"error":"Bad Request"}，完全看不出原因）。
+      # 本服务只被 anime-chat-server 在内网调用，不是公开接口，
+      # 带出 message 是为了排障：否则「语料源返回 0 条」与
+      # 「jdbc URL 的 characterEncoding 写错」在响应体里长得一模一样。
+      include-message: always
   threads:
     virtual:
       enabled: true

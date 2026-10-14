@@ -11,7 +11,9 @@ import java.util.LinkedHashMap;
 import com.animeai.config.AiProperties;
 import com.animeai.tool.BangumiClient;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 
 /** 从现有 anime 表构造 M2 文档；不写业务库。 */
 @Component
@@ -27,7 +29,9 @@ public class CorpusLoader {
     public List<KnowledgeDocument> loadFromMySql(Integer requestedLimit) {
         AiProperties.Corpus config = props.corpus();
         if (config.jdbcUrl() == null || config.jdbcUrl().isBlank()) {
-            throw new IllegalStateException("未配置 AI_CORPUS_JDBC_URL，或直接在请求中传 documents");
+            // 调用方要求用 mysql 源，但服务端没启用它 —— 这是「该 source 不可用」，不是服务端故障
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "未配置 AI_CORPUS_JDBC_URL，或直接在请求中传 documents");
         }
         int limit = requestedLimit == null || requestedLimit <= 0 ? 3000 : Math.min(requestedLimit, 10000);
         String sql = "SELECT anime_id,title,category,pub_time,description,season,rank,region,status FROM anime ORDER BY anime_id LIMIT ?";
@@ -52,7 +56,18 @@ public class CorpusLoader {
                 }
             }
         } catch (Exception e) {
-            throw new IllegalStateException("读取 anime 表失败", e);
+            /*
+             * 连同 root cause 一起说出来。这里最容易踩的坑是 URL 里的 characterEncoding：
+             * 写成 utf8mb4（MySQL 的字符集名）会得到 UnsupportedEncodingException，
+             * 而只回一句「读取 anime 表失败」根本看不出问题在哪。
+             */
+            Throwable root = e;
+            while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "读取 anime 表失败：" + root.getClass().getSimpleName()
+                            + (root.getMessage() == null ? "" : " - " + root.getMessage()),
+                    e);
         }
         return documents;
     }
