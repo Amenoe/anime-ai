@@ -119,8 +119,9 @@ cp .env.example .env   # 然后填 AI_CHAT_API_KEY
 - 有速率限制，语料同步任务（M2）要串行 + 限速
 - 本机 curl 连不上 `api.bgm.tv`（connect=0），但 Java 客户端正常 —— 调试时别只信 curl
 
-## M2 预留
+## M2 知识库检索
 
-- `langchain4j-qdrant` 由 BOM 自动对齐版本，加依赖即可
-- Embedding：SiliconFlow BGE-M3（1024 维），`EmbeddingModel` bean 已按 api-key 条件装配
-- 检索接口设计（**必须**与生成拆开，否则离线评估无法进行）见 `docs/ai-rag-practice-roadmap.md` §3.6
+- 已实现 Qdrant REST 接入（集合 `anime_knowledge`）、BGE-M3 批量 embedding、内容 hash 增量导入、Bangumi/MySQL 语料加载、纯检索 `/internal/retrieve` 与 `search_knowledge` 工具。
+- 启用需配置 `AI_EMBEDDING_API_KEY` 并启动 `docker-compose.rag.yml` 中的 Qdrant；本机 MySQL 导入还需配置 `AI_CORPUS_JDBC_URL`。不配 embedding 时 M1 仍可单独启动。
+- `/internal/retrieve` 与对话生成分离，供 M3 评估脚本直接调用；端点协议和命令见本仓 `README.md` 与 `docs/ai-rag-practice-roadmap.md` §3.6。
+- 2026-10-01 本地 SiliconFlow key 与 Qdrant 已验证：Bangumi 3000 条成功入库，作品名检索有命中，未变化文档重跑返回 `upserted=0`。语义召回质量仍需 M3 golden set 量化，不要把 smoke test 当作召回质量达标证明。

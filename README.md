@@ -76,8 +76,72 @@ curl -N -X POST http://127.0.0.1:8013/internal/ai/chat \
 | `AI_EMBEDDING_API_KEY` | 空 | SiliconFlow key，配了才会创建 embedding bean（M2 才用） |
 | `AI_EMBEDDING_MODEL` | `BAAI/bge-m3` | 1024 维；**需在控制台确认确切 model id** |
 | `AI_BANGUMI_UA` | `anime-ai/0.1 …` | Bangumi 要求带 User-Agent |
+| `AI_QDRANT_URL` | `http://127.0.0.1:6333` | M2 Qdrant REST 地址 |
+| `AI_QDRANT_COLLECTION` | `anime_knowledge` | M2 向量集合名 |
+| `AI_CORPUS_JDBC_URL` | 空 | 可选，只读本地 `anime` 表；空时仍可从 Bangumi 导入 |
+| `AI_CORPUS_DB_USERNAME` / `AI_CORPUS_DB_PASSWORD` | 空 | 本地语料库连接凭据 |
 
 > ⚠️ **DeepSeek 没有 embedding 接口**，向量化必须用第二家供应商（SiliconFlow）。
+
+## M2：知识库索引与检索
+
+### Qdrant 在这里做什么
+
+Qdrant 是向量数据库。它不负责调用 LLM，也不负责生成答案，只保存和搜索两类数据：
+
+- **vector**：BGE-M3 为一部番剧简介生成的 1024 维向量，用 Cosine 相似度搜索；
+- **payload**：`subject_id`、标题、标签、年份、评分、简介和 `content_hash`，用于前端回链、过滤和增量更新。
+
+当前集合名是 `anime_knowledge`，一部番剧对应一个 point，point id 就是 Bangumi `subject_id`。`KnowledgeService` 负责 embedding 和增量逻辑，`QdrantClient` 只负责调用 Qdrant REST API。
+
+### 启动、查看和停止
+
+配置 `AI_EMBEDDING_API_KEY`（SiliconFlow）后启动 Qdrant：
+
+```bash
+docker compose -f docker-compose.rag.yml up -d
+```
+
+查看容器和集合：
+
+```bash
+docker compose -f docker-compose.rag.yml ps
+curl http://127.0.0.1:6333/collections
+curl http://127.0.0.1:6333/collections/anime_knowledge
+```
+
+停止容器但保留向量数据：
+
+```bash
+docker compose -f docker-compose.rag.yml stop
+```
+
+删除容器并清空向量数据：
+
+```bash
+docker compose -f docker-compose.rag.yml down -v
+```
+
+`down -v` 会删除 `qdrant_storage` volume，下一次必须重新导入语料；普通 `stop` 或 `down` 不会删除数据。
+
+未配置本地语料库时，直接从 Bangumi 导入 3000 条动画简介、标签及元数据（分页限速 1 req/s；重复导入只重算变化项）：
+
+```bash
+curl -X POST http://127.0.0.1:8013/internal/knowledge/ingest \
+  -H 'Content-Type: application/json' -H "X-Internal-Token: $AI_INTERNAL_TOKEN" \
+  -d '{"source":"bangumi","limit":3000}'
+```
+
+若已配置本地 `anime` 表连接，省略 `source` 会从 MySQL 读取最多 3000 条；也可显式传 `source:"mysql"`。显式传 `source:"bangumi"` 总是从 Bangumi 导入。
+只读检索接口不调用聊天模型，供 M3 离线评估直接使用：
+
+```bash
+curl -X POST http://127.0.0.1:8013/internal/retrieve \
+  -H 'Content-Type: application/json' -H "X-Internal-Token: $AI_INTERNAL_TOKEN" \
+  -d '{"query":"时间循环 悬疑","topK":5}'
+```
+
+过滤器支持 `yearFrom`、`minRating`、`metaTags`，在 Qdrant 召回前执行。M2 每部番是一条向量，不对短简介硬切 chunk；`/internal/ai/chat` 已将模糊回忆请求路由到 `search_knowledge`。索引入口受同一内部令牌保护，应只在可信内网/本地调用。
 
 ## SSE 事件协议
 
