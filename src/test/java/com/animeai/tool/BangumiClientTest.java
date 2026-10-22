@@ -36,6 +36,7 @@ class BangumiClientTest {
                 new AiProperties.Bangumi("https://api.bgm.tv", UA, Duration.ofSeconds(25)),
                 null,
                 null,
+                null,
                 null);
         return new BangumiClient(props);
     }
