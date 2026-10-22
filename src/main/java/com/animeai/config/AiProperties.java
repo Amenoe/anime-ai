@@ -12,7 +12,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "ai")
 public record AiProperties(
-        Chat chat, Embedding embedding, Bangumi bangumi, Qdrant qdrant, Corpus corpus, String internalToken) {
+        Chat chat,
+        Embedding embedding,
+        Bangumi bangumi,
+        Qdrant qdrant,
+        Corpus corpus,
+        Retrieval retrieval,
+        String internalToken) {
 
     /** 对话模型（DeepSeek，OpenAI 兼容）。 */
     public record Chat(
@@ -31,6 +37,16 @@ public record AiProperties(
     public record Embedding(String baseUrl, String apiKey, String model, Integer dimensions) {}
 
     public record Qdrant(String baseUrl, String collection, Integer topK) {}
+
+    /**
+     * 检索行为开关。
+     *
+     * @param strategy vector / hybrid / rrf / hybrid-rrf，留空即 hybrid
+     * @param enabled  kill switch：false 时对话工具不调 embedding、直接返回空结果。
+     *                 用来在 embedding 供应商限流/欠费时**保住对话主链路**，
+     *                 不用改代码也不用回滚发布。
+     */
+    public record Retrieval(String strategy, Boolean enabled) {}
 
     /** 本地 anime 表连接；不配置 jdbc-url 时不启用自动入库。 */
     public record Corpus(String jdbcUrl, String username, String password, Integer batchSize) {}

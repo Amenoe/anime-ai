@@ -3,6 +3,7 @@ package com.animeai.tool;
 import java.util.List;
 import java.util.Map;
 
+import com.animeai.config.AiProperties;
 import com.animeai.model.AnimeCard;
 import com.animeai.rag.KnowledgeHit;
 import com.animeai.rag.KnowledgeService;
@@ -34,10 +35,13 @@ public class AnimeTools {
 
     private final BangumiClient bangumi;
     private final KnowledgeService knowledge;
+    private final AiProperties props;
 
-    public AnimeTools(BangumiClient bangumi, ObjectProvider<KnowledgeService> knowledge) {
+    public AnimeTools(
+            BangumiClient bangumi, ObjectProvider<KnowledgeService> knowledge, AiProperties props) {
         this.bangumi = bangumi;
         this.knowledge = knowledge.getIfAvailable();
+        this.props = props;
     }
 
     @Tool(name = "search_anime", value = """
@@ -82,9 +86,26 @@ public class AnimeTools {
             log.warn("search_knowledge 被调用但 embedding 未配置");
             return List.of();
         }
+        /*
+         * 两级降级，因为**检索是增强功能，不能拖垮对话主链路**：
+         *   1. 配置层 kill switch（ai.retrieval.enabled=false）——供应商限流/欠费时
+         *      主动关掉，不必回滚发布；而且明确不调 embedding，连钱都不花。
+         *   2. 运行层兜底 —— Qdrant 挂了、embedding 超时、解析失败等任何异常，
+         *      都降级成「没搜到」。模型会如实说没找到，用户仍能正常对话。
+         * 没有第 2 层时，一次 Qdrant 抖动就会让整轮对话 500。
+         */
+        if (props.retrieval() != null && Boolean.FALSE.equals(props.retrieval().enabled())) {
+            log.warn("search_knowledge 已被 ai.retrieval.enabled=false 关闭，跳过检索");
+            return List.of();
+        }
         int effectiveLimit = normalizeLimit(limit);
-        List<KnowledgeHit> hits = knowledge.retrieve(query, effectiveLimit, Map.of());
-        return hits.stream().map(AnimeTools::toCard).toList();
+        try {
+            List<KnowledgeHit> hits = knowledge.retrieve(query, effectiveLimit, Map.of());
+            return hits.stream().map(AnimeTools::toCard).toList();
+        } catch (RuntimeException e) {
+            log.warn("search_knowledge 检索失败，降级为无结果（对话应继续）: {}", e.toString());
+            return List.of();
+        }
     }
 
     private static AnimeCard toCard(KnowledgeHit hit) {

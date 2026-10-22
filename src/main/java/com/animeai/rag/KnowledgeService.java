@@ -11,6 +11,8 @@ import java.util.LinkedHashMap;
 import com.animeai.config.AiProperties;
 
 import dev.langchain4j.data.segment.TextSegment;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
@@ -35,6 +37,8 @@ import org.springframework.stereotype.Service;
 @Service
 @ConditionalOnBean(EmbeddingModel.class)
 public class KnowledgeService {
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeService.class);
+
     private final EmbeddingModel embeddingModel;
     private final QdrantClient qdrant;
     private final AiProperties props;
@@ -153,7 +157,27 @@ public class KnowledgeService {
      * 等结构化条件会由 {@link QdrantClient} 转为 Qdrant 的 pre-filter，在召回前过滤。
      */
     public List<KnowledgeHit> retrieve(String query, int topK, Map<String, Object> filters) {
-        return retrieve(query, topK, filters, DEFAULT_STRATEGY);
+        return retrieve(query, topK, filters, configuredStrategy());
+    }
+
+    /**
+     * 默认策略：**配置优先，代码兜底**。
+     *
+     * <p>做成配置是为了不用改代码就能切换/回滚（见 application.yml 的 ai.retrieval）。
+     * 但配置写错时不能把系统搞挂，所以非法值一律回落到 {@link #DEFAULT_STRATEGY}。
+     */
+    private String configuredStrategy() {
+        String configured = props.retrieval() == null ? null : props.retrieval().strategy();
+        if (configured == null || configured.isBlank()) return DEFAULT_STRATEGY;
+        String normalized = configured.trim().toLowerCase();
+        return switch (normalized) {
+            case STRATEGY_VECTOR, STRATEGY_HYBRID, STRATEGY_RRF, STRATEGY_HYBRID_RRF -> normalized;
+            default -> {
+                // 配置写错不该让检索失效，但必须留痕 —— 否则「配了却没生效」会静默很久
+                log.warn("ai.retrieval.strategy 取值非法（{}），回落到默认 {}", configured, DEFAULT_STRATEGY);
+                yield DEFAULT_STRATEGY;
+            }
+        };
     }
 
     /** 按指定策略检索，见类顶部 STRATEGY_* 常量的说明。 */
@@ -164,7 +188,7 @@ public class KnowledgeService {
         // 这里曾写成 strategy == null ? "" : ...，于是空值落到 switch 的 default 分支
         // 变成 vector —— 表现为「默认策略改了但不生效」，而显式传 hybrid 却正常。
         String mode = strategy == null || strategy.isBlank()
-                ? DEFAULT_STRATEGY
+                ? configuredStrategy()
                 : strategy.trim().toLowerCase();
         return switch (mode) {
             case STRATEGY_RRF -> retrieveRrf(query, limit, filters);
