@@ -173,7 +173,12 @@ public class ChatService {
                     "stream conversationId={} 历史 {} 条，本轮长度 {}",
                     conversationId, history.size(), prompt.length());
 
-            TokenStream stream = assistant.chat(java.time.LocalDate.now().toString(), prompt);
+            // 追番摘要由 NestJS 拼好传来；为空时给一句明确文案，避免提示词里出现空段
+            String userAnime = StringUtils.hasText(request.userAnime())
+                    ? request.userAnime().trim()
+                    : "（这位用户还没有收藏记录，或未登录）";
+
+            TokenStream stream = assistant.chat(java.time.LocalDate.now().toString(), userAnime, prompt);
             stream.onPartialResponse(text -> writer.send(SseEvent.TEXT_DELTA, Map.of("text", text)))
                     .beforeToolExecution(before -> writer.send(
                             SseEvent.TOOL_CALL,

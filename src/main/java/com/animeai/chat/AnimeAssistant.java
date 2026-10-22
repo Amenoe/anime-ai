@@ -24,6 +24,11 @@ public interface AnimeAssistant {
      *              而「这个季度/本季/新番」这类请求全靠它推算年月。实测不注入时，
      *              模型会先查总榜、再反复换季度试，最后撞上工具调用上限整轮失败。
      */
+    /**
+     * @param today     当前日期（YYYY-MM-DD），用于推算「本季/这个季度」
+     * @param userAnime 用户的站内追番摘要，由 NestJS 拼好传入；为空表示无记录
+     */
     @SystemMessage(fromResource = "prompts/system-prompt.txt")
-    TokenStream chat(@V("today") String today, @UserMessage String message);
+    TokenStream chat(
+            @V("today") String today, @V("userAnime") String userAnime, @UserMessage String message);
 }

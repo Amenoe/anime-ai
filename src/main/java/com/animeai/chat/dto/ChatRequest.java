@@ -18,11 +18,15 @@ import jakarta.validation.constraints.Size;
  *
  * @param messages 完整消息列表（含本轮用户消息），最后一条必须是 user
  * @param message  单轮便捷写法；仅在没有 messages 时使用，等价于只有一条 user 消息
+ * @param userAnime 用户的站内追番摘要（由 NestJS 拼好传过来）。
+ *                  <b>为什么由上游传而不是本服务去查</b>：本仓不碰业务库
+ *                  （见 AGENTS.md 的架构边界），追番是用户业务数据，归属 NestJS。
  */
 public record ChatRequest(
         @Size(max = 64, message = "conversationId 过长") String conversationId,
         @Valid List<ChatMessageDto> messages,
-        @Size(max = 2000, message = "message 过长") String message) {
+        @Size(max = 2000, message = "message 过长") String message,
+        @Size(max = 2000, message = "userAnime 过长") String userAnime) {
 
     /** 单条历史消息。role 只接受 user / assistant。 */
     public record ChatMessageDto(
