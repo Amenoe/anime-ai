@@ -3,6 +3,7 @@ package com.animeai.chat;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.UserMessage;
+import dev.langchain4j.service.V;
 
 /**
  * 番剧助手接口，由 {@code AiServices} 生成实现。
@@ -18,6 +19,11 @@ import dev.langchain4j.service.UserMessage;
  */
 public interface AnimeAssistant {
 
+    /**
+     * @param today 当前日期（YYYY-MM-DD）。必须由调用方注入 —— 模型自己不知道今天是哪天，
+     *              而「这个季度/本季/新番」这类请求全靠它推算年月。实测不注入时，
+     *              模型会先查总榜、再反复换季度试，最后撞上工具调用上限整轮失败。
+     */
     @SystemMessage(fromResource = "prompts/system-prompt.txt")
-    TokenStream chat(@UserMessage String message);
+    TokenStream chat(@V("today") String today, @UserMessage String message);
 }

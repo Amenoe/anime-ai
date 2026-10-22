@@ -173,7 +173,7 @@ public class ChatService {
                     "stream conversationId={} 历史 {} 条，本轮长度 {}",
                     conversationId, history.size(), prompt.length());
 
-            TokenStream stream = assistant.chat(prompt);
+            TokenStream stream = assistant.chat(java.time.LocalDate.now().toString(), prompt);
             stream.onPartialResponse(text -> writer.send(SseEvent.TEXT_DELTA, Map.of("text", text)))
                     .beforeToolExecution(before -> writer.send(
                             SseEvent.TOOL_CALL,
@@ -340,8 +340,36 @@ public class ChatService {
         }
     }
 
+    /**
+     * 把异常转成**用户能看懂的原因**，而不是把英文原文甩给前端。
+     *
+     * <p>之前「exceeded 5 tool calling round trips」这种字符串会原样出现在界面上，
+     * 用户只看到一段红字和一句英文，既不知道发生了什么、也不知道能不能继续。
+     */
     private static String safeMessage(Throwable error) {
-        String message = error.getMessage();
-        return (message == null || message.isBlank()) ? error.getClass().getSimpleName() : message;
+        String raw = error.getMessage() == null ? "" : error.getMessage();
+        String lower = raw.toLowerCase();
+        if (raw.contains("maxToolCallingRoundTrips") || raw.contains("tool calling round trips")) {
+            return "这轮查得太久了（工具调用次数超限），没能给出完整结果。"
+                    + "换个更具体的问法、或者缩小范围再试试。";
+        }
+        if (lower.contains("timeout") || lower.contains("timed out")) {
+            return "上游服务响应超时，这轮没答完。稍等一下再问一次。";
+        }
+        if (lower.contains("rate limit") || raw.contains("429")) {
+            return "上游服务限流了，稍等一会儿再问。";
+        }
+        // 上游鉴权失败：原文是 "Authentication Fails, Your api key: ****test is invalid"，
+        // 既对用户无意义，还会把 key 尾部片段泄露到前端，必须转译。
+        if (lower.contains("authentication")
+                || lower.contains("invalid api key")
+                || lower.contains("unauthorized")
+                || raw.contains("401")) {
+            return "上游服务鉴权失败（API key 无效或已失效），请联系管理员。";
+        }
+        if (lower.contains("connection") || lower.contains("connect")) {
+            return "连不上上游服务，这轮没答完。检查网络后再试。";
+        }
+        return raw.isBlank() ? error.getClass().getSimpleName() : raw;
     }
 }
