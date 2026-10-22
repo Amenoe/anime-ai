@@ -37,6 +37,14 @@ public class SeriesKnowledge {
     private static final int MAX_EVIDENCE = 12;
     /** 默认最多看几季（防止一次拉太多触发限流） */
     private static final int DEFAULT_SEASONS = 2;
+    /**
+     * 单次返回的**总字符预算**（约 3000~4000 token）。
+     *
+     * <p>为什么必须封顶：一季 24 集 × 每集 120 字 = 近 3000 字，三季就接近 9000 字，
+     * 会挤掉对话历史与工具定义。而归纳主线根本不需要逐集全文 ——
+     * 给足每集 60~120 字就够模型抓剧情走向。
+     */
+    private static final int OUTLINE_CHAR_BUDGET = 6000;
 
     /**
      * 常见译名同音字。
@@ -140,7 +148,7 @@ public class SeriesKnowledge {
      * <p>刻意只给**素材**，不让本方法自己总结 —— 归纳交给对话模型，
      * 它更擅长组织语言；这里只负责把数据整齐地摆出来。
      */
-    public String seriesOutline(String title, Integer maxSeasons, Integer maxEpisodesPerSeason) {
+    public String seriesOutline(String title, Integer season, Integer maxSeasons) {
         if (!tmdb.enabled()) {
             return "（未配置 TMDB，无法查询分集信息）";
         }
@@ -157,41 +165,62 @@ public class SeriesKnowledge {
             return "TMDB 上没有《" + hit.name() + "》的季信息。";
         }
 
-        int seasons = maxSeasons == null || maxSeasons <= 0 ? DEFAULT_SEASONS : Math.min(maxSeasons, 6);
-        int perSeason = maxEpisodesPerSeason == null || maxEpisodesPerSeason <= 0 ? 30 : Math.min(maxEpisodesPerSeason, 60);
+        List<TmdbClient.Season> all = detail.seasons().stream()
+                .filter(s -> s.seasonNumber() > 0) // season 0 是特别篇，与「第几季」的直觉不符
+                .sorted((a, b) -> Integer.compare(a.seasonNumber(), b.seasonNumber()))
+                .toList();
+
+        List<TmdbClient.Season> picked;
+        if (season != null && season > 0) {
+            // 指定了单季：只取它。这样「第三季讲了什么」不会把前两季一起拉进来。
+            picked = all.stream().filter(s -> s.seasonNumber() == season).toList();
+            if (picked.isEmpty()) {
+                String existing = all.stream().map(s -> String.valueOf(s.seasonNumber())).toList().toString();
+                return "《" + hit.name() + "》没有第 " + season + " 季。现有季：" + existing;
+            }
+        } else {
+            int n = maxSeasons == null || maxSeasons <= 0 ? DEFAULT_SEASONS : Math.min(maxSeasons, 6);
+            picked = all.stream().limit(n).toList();
+        }
+
+        // 按总集数自适应每集长度：集越多给得越短，保证总量可控
+        int estimated = picked.stream().mapToInt(TmdbClient.Season::episodeCount).sum();
+        int perEpisode = estimated <= 15 ? 120 : estimated <= 30 ? 90 : 60;
 
         StringBuilder out = new StringBuilder();
         out.append("《").append(hit.name()).append("》");
         if (StringUtils.hasText(hit.firstAirDate())) out.append("（首播 ").append(hit.firstAirDate()).append("）");
         out.append("\n");
 
-        List<TmdbClient.Season> list = detail.seasons().stream()
-                .filter(s -> s.seasonNumber() > 0)
-                .sorted((a, b) -> Integer.compare(a.seasonNumber(), b.seasonNumber()))
-                .limit(seasons)
-                .toList();
-
         int withOverview = 0;
         int totalEpisodes = 0;
-        for (TmdbClient.Season season : list) {
-            List<TmdbClient.Episode> eps = tmdb.season(hit.id(), season.seasonNumber());
-            out.append("\n【第 ").append(season.seasonNumber()).append(" 季】共 ")
-                    .append(season.episodeCount()).append(" 集\n");
-            for (TmdbClient.Episode ep : eps.stream().limit(perSeason).toList()) {
-                totalEpisodes++;
+        boolean truncated = false;
+
+        for (TmdbClient.Season sn : picked) {
+            List<TmdbClient.Episode> eps = tmdb.season(hit.id(), sn.seasonNumber());
+            out.append("\n【第 ").append(sn.seasonNumber()).append(" 季】共 ")
+                    .append(sn.episodeCount()).append(" 集\n");
+            for (TmdbClient.Episode ep : eps) {
                 String overview = ep.overview() == null ? "" : ep.overview().replaceAll("\\s+", " ").trim();
-                if (overview.isEmpty()) {
-                    out.append("ep").append(ep.episodeNumber()).append("「").append(safe(ep.name())).append("」：（无简介）\n");
-                } else {
-                    withOverview++;
-                    out.append("ep").append(ep.episodeNumber()).append("「").append(safe(ep.name())).append("」：")
-                            .append(overview.length() > 120 ? overview.substring(0, 120) + "…" : overview)
-                            .append("\n");
+                String body = overview.isEmpty() ? "（无简介）"
+                        : (overview.length() > perEpisode ? overview.substring(0, perEpisode) + "…" : overview);
+                String line = "ep" + ep.episodeNumber() + "「" + safe(ep.name()) + "」：" + body + "\n";
+                if (out.length() + line.length() > OUTLINE_CHAR_BUDGET) {
+                    truncated = true;
+                    break;
                 }
+                totalEpisodes++;
+                if (!overview.isEmpty()) withOverview++;
+                out.append(line);
             }
+            if (truncated) break;
         }
-        out.append("\n（共 ").append(totalEpisodes).append(" 集，其中 ").append(withOverview)
-                .append(" 集有简介；请据此归纳每一季的主线，不要逐集复述。）");
+
+        out.append("\n（列出 ").append(totalEpisodes).append(" 集，其中 ").append(withOverview).append(" 集有简介");
+        if (truncated) {
+            out.append("；已达输出上限，后面的集未列出 —— 如需完整内容请指定单季，例如 season=2");
+        }
+        out.append("。请据此归纳每一季的主线，不要逐集复述。）");
         return out.toString();
     }
 

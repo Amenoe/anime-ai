@@ -142,9 +142,10 @@ public class AnimeTools {
             """)
     public String seriesOutline(
             @P("作品名，例如「无职转生」") String title,
-            @P(value = "最多查几季，默认 2", required = false) Integer seasons,
-            @P(value = "每季最多列几集，默认 30", required = false) Integer episodes) {
-        return series.seriesOutline(title, seasons, episodes);
+            @P(value = "只看某一季，例如 2。用户明确说「第二季/第三季」时传它，避免把其它季也拉进来",
+                            required = false) Integer season,
+            @P(value = "取前几季（未指定 season 时生效），默认 2", required = false) Integer seasons) {
+        return series.seriesOutline(title, season, seasons);
     }
 
     private static AnimeCard toCard(KnowledgeHit hit) {
