@@ -3,9 +3,11 @@ package com.animeai.rag;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.LinkedHashMap;
 
 import com.animeai.config.AiProperties;
@@ -178,6 +180,28 @@ public class KnowledgeService {
                 yield DEFAULT_STRATEGY;
             }
         };
+    }
+
+    /**
+     * 按 subject_id 批量取题材标签（{@code meta_tags}），用于「按用户看过的番推断口味」。
+     *
+     * <p>只读 Qdrant 的 payload，不做向量检索，所以不走 {@code ai.retrieval.strategy}；
+     * 但**遵守 {@code ai.retrieval.enabled} 这个总开关** —— 关掉检索时不该还有隐含的 Qdrant 调用。
+     *
+     * @return 查不到的就缺席（调用方自行兜底），不抛异常
+     */
+    public Map<Integer, List<String>> tagsOf(Collection<Integer> subjectIds) {
+        if (subjectIds == null || subjectIds.isEmpty()) return Map.of();
+        if (props.retrieval() != null && !props.retrieval().enabled()) return Map.of();
+        List<Long> ids = subjectIds.stream()
+                .filter(Objects::nonNull)
+                .map(Integer::longValue)
+                .distinct()
+                .limit(24)
+                .toList();
+        Map<Integer, List<String>> result = new LinkedHashMap<>();
+        qdrant.metaTagsOf(ids).forEach((id, tags) -> result.put(id.intValue(), tags));
+        return result;
     }
 
     /** 按指定策略检索，见类顶部 STRATEGY_* 常量的说明。 */

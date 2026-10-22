@@ -53,6 +53,45 @@ public class QdrantClient {
                 .contentType(MediaType.APPLICATION_JSON).body(Map.of("points", values)).retrieve().toBodilessEntity();
     }
 
+    /**
+     * 按 subject_id 批量取题材标签（{@code meta_tags}）。
+     *
+     * <p>为什么用 {@code meta_tags} 而不是 {@code tags}：后者混着大量用户玩梗标签
+     * （实测有「还是死妹控」「露露胸」「狗得鸡鸭死」这种），拿去做口味推断只会学到噪音；
+     * {@code meta_tags} 是清洗过的题材词（机战/科幻/日常/恋爱…），每个条目约 5 个。
+     *
+     * @return subject_id → 标签列表；查不到的 id 不会出现在结果里
+     */
+    public Map<Long, List<String>> metaTagsOf(List<Long> subjectIds) {
+        if (subjectIds.isEmpty()) return Map.of();
+        Map<String, Object> body = Map.of(
+                "filter", Map.of("must", List.of(Map.of("key", "subject_id", "match", Map.of("any", subjectIds)))),
+                "with_payload", List.of("subject_id", "meta_tags"),
+                "limit", subjectIds.size());
+        String raw = client.post().uri("/collections/{name}/points/scroll", collection)
+                .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(String.class);
+        try {
+            Map<?, ?> root = Json.MAPPER.readValue(raw, Map.class);
+            Object result = root.get("result");
+            if (!(result instanceof Map<?, ?> resultMap) || !(resultMap.get("points") instanceof List<?> points)) return Map.of();
+            Map<Long, List<String>> tags = new LinkedHashMap<>();
+            for (Object point : points) {
+                if (!(point instanceof Map<?, ?> item) || !(item.get("payload") instanceof Map<?, ?> payload)) continue;
+                if (!(payload.get("subject_id") instanceof Number number)) continue;
+                if (!(payload.get("meta_tags") instanceof List<?> raw2)) continue;
+                List<String> kept = new ArrayList<>();
+                for (Object t : raw2) {
+                    if (t != null && !String.valueOf(t).isBlank()) kept.add(String.valueOf(t).trim());
+                }
+                if (!kept.isEmpty()) tags.put(number.longValue(), kept);
+            }
+            return tags;
+        } catch (Exception e) {
+            // 标签只是增强，取不到就当没有 —— 不能因为 payload 结构变了就让对话失败
+            return Map.of();
+        }
+    }
+
     /** 返回已存在条目的指纹，避免每次重跑都产生 embedding API 费用。 */
     public Map<Long, String> existingHashes(List<Long> subjectIds) {
         if (subjectIds.isEmpty()) return Map.of();

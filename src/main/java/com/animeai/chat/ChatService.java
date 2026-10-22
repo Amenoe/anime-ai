@@ -10,6 +10,7 @@ import com.animeai.chat.dto.ChatRequest;
 import com.animeai.config.AiProperties;
 import com.animeai.model.AnimeCard;
 import com.animeai.support.Json;
+import com.animeai.rag.KnowledgeService;
 import com.animeai.tool.AnimeTools;
 
 import dev.langchain4j.data.message.AiMessage;
@@ -77,12 +78,17 @@ public class ChatService {
 
     private final StreamingChatModel streamingChatModel;
     private final AnimeTools animeTools;
+    private final KnowledgeService knowledgeService;
     private final AiProperties props;
 
     public ChatService(
-            StreamingChatModel streamingChatModel, AnimeTools animeTools, AiProperties props) {
+            StreamingChatModel streamingChatModel,
+            AnimeTools animeTools,
+            KnowledgeService knowledgeService,
+            AiProperties props) {
         this.streamingChatModel = streamingChatModel;
         this.animeTools = animeTools;
+        this.knowledgeService = knowledgeService;
         this.props = props;
     }
 
@@ -175,7 +181,7 @@ public class ChatService {
 
             // 追番摘要由 NestJS 拼好传来；为空时给一句明确文案，避免提示词里出现空段
             String userAnime = StringUtils.hasText(request.userAnime())
-                    ? request.userAnime().trim()
+                    ? annotateTags(request.userAnime().trim())
                     : "（这位用户还没有收藏记录，或未登录）";
 
             TokenStream stream = assistant.chat(java.time.LocalDate.now().toString(), userAnime, prompt);
@@ -342,6 +348,68 @@ public class ChatService {
             return Json.MAPPER.readTree(json);
         } catch (Exception e) {
             return json;
+        }
+    }
+
+    /**
+     * 给追番摘要补上题材标签：`【在看】400602:葬送的芙莉莲` → `【在看】葬送的芙莉莲(奇幻/治愈/冒险)`。
+     *
+     * <p>为什么要这一步：模型即使知道「这人看过芙莉莲」，也只能靠自己的记忆猜它是什么类型；
+     * 而知识库里的 {@code meta_tags} 是清洗过的题材词，拿它拼进上下文，
+     * 推荐才有**可核对**的口味依据，而不是模型的印象。
+     *
+     * <p>取不到标签时原样返回（保留标题），绝不因为查标签失败让对话失败。
+     */
+    private String annotateTags(String raw) {
+        if (!StringUtils.hasText(raw)) return raw;
+        try {
+            // 解析出所有 `id:title` 里的 id
+            List<Integer> ids = new ArrayList<>();
+            for (String line : raw.split("\\R")) {
+                int close = line.indexOf('】');
+                if (close < 0) continue;
+                for (String item : line.substring(close + 1).split("[;；]")) {
+                    String trimmed = item.trim();
+                    int colon = trimmed.indexOf(':');
+                    if (colon <= 0) continue;
+                    String idPart = trimmed.substring(0, colon).trim();
+                    if (idPart.matches("\\d{1,9}")) ids.add(Integer.parseInt(idPart));
+                }
+            }
+            if (ids.isEmpty()) return raw;
+
+            Map<Integer, List<String>> tags = knowledgeService.tagsOf(ids);
+            if (tags.isEmpty()) return raw;
+
+            StringBuilder out = new StringBuilder();
+            for (String line : raw.split("\\R")) {
+                int close = line.indexOf('】');
+                if (close < 0) {
+                    out.append(line).append('\n');
+                    continue;
+                }
+                out.append(line, 0, close + 1);
+                List<String> parts = new ArrayList<>();
+                for (String item : line.substring(close + 1).split("[;；]")) {
+                    String trimmed = item.trim();
+                    if (trimmed.isEmpty()) continue;
+                    int colon = trimmed.indexOf(':');
+                    String idPart = colon > 0 ? trimmed.substring(0, colon).trim() : "";
+                    String title = colon > 0 ? trimmed.substring(colon + 1).trim() : trimmed;
+                    List<String> tagList = idPart.matches("\\d{1,9}")
+                            ? tags.get(Integer.parseInt(idPart))
+                            : null;
+                    // 标签最多留 4 个：再多只是重复信息，白占 token
+                    parts.add(tagList == null || tagList.isEmpty()
+                            ? title
+                            : title + "(" + String.join("/", tagList.subList(0, Math.min(4, tagList.size()))) + ")");
+                }
+                out.append(String.join("；", parts)).append('\n');
+            }
+            return out.toString().trim();
+        } catch (RuntimeException e) {
+            log.debug("补追番标签失败，按原文处理: {}", e.toString());
+            return raw;
         }
     }
 
