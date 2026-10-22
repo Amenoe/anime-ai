@@ -35,7 +35,8 @@ public class KnowledgeController {
     @PostMapping("/retrieve")
     public RetrieveResponse retrieve(@Valid @RequestBody RetrieveRequest request) {
         int topK = request.topK() == null ? props.qdrant().topK() : request.topK();
-        List<Map<String, Object>> hits = knowledge.retrieve(request.query(), topK, request.filters())
+        List<Map<String, Object>> hits = knowledge.retrieve(
+                        request.query(), topK, request.filters(), request.strategy())
                 .stream().map(hit -> Map.<String, Object>of(
                         "subject_id", hit.subjectId(), "score", hit.score(), "text", hit.text(), "payload", hit.payload()))
                 .toList();
@@ -72,7 +73,13 @@ public class KnowledgeController {
         return Map.of("upserted", knowledge.ingest(documents), "loaded", documents.size(), "source", source);
     }
 
-    public record RetrieveRequest(@NotBlank String query, Integer topK, Map<String, Object> filters) {}
+    /**
+     * @param strategy 检索策略，**留空即 vector**（向后兼容）。可选 vector / hybrid / rrf /
+     *                 hybrid-rrf。做成参数是为了能在同一份语料上跑对照实验，
+     *                 而不是改代码重启逐次试。
+     */
+    public record RetrieveRequest(
+            @NotBlank String query, Integer topK, Map<String, Object> filters, String strategy) {}
 
     public record RetrieveResponse(List<Map<String, Object>> hits) {}
 

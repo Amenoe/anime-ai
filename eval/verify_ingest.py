@@ -111,7 +111,9 @@ def main() -> int:
         delete_points([a, b])
 
         # 只探活，不要用 ingest 探活 —— 那会先写一次，让「首轮」变成第二轮
-        post("http://127.0.0.1:8013/internal/ai/ping", {}, token)
+        # 从 INGEST_URL 推导服务根地址：否则指定了别的端口探活却打到默认端口，
+        # 会出现「换端口跑实验时，探活成功但实际打的是另一个实例」。
+        post(f"{INGEST_URL.rsplit(chr(47) + 'internal' + chr(47), 1)[0]}/internal/ai/ping", {}, token)
     except urllib.error.HTTPError as exc:
         print(f"服务返回 HTTP {exc.code}：{exc.read().decode('utf-8', 'ignore')[:200]}")
         return 1

@@ -45,8 +45,11 @@ def load_internal_token() -> str:
     return ""
 
 
-def retrieve(url: str, token: str, query: str, top_k: int) -> list[dict]:
-    body = json.dumps({"query": query, "topK": top_k}).encode("utf-8")
+def retrieve(url: str, token: str, query: str, top_k: int, strategy: str | None = None) -> list[dict]:
+    payload: dict = {"query": query, "topK": top_k}
+    if strategy:
+        payload["strategy"] = strategy
+    body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=body,
@@ -76,6 +79,10 @@ def main() -> int:
     ap.add_argument("--topk", type=int, default=10)
     ap.add_argument("--json", type=Path, default=None, help="把结果落盘，便于两次运行对照")
     ap.add_argument("--quiet", action="store_true", help="只打汇总，不打每条明细")
+    ap.add_argument(
+        "--strategy",
+        default=None,
+        help="检索策略：vector(默认) / hybrid / rrf / hybrid-rrf。服务端留空即 vector")
     args = ap.parse_args()
 
     golden = json.loads(args.golden.read_text(encoding="utf-8"))
@@ -95,7 +102,7 @@ def main() -> int:
     rr_sum = 0.0
 
     for q in golden["queries"]:
-        hits = retrieve(args.url, token, q["query"], args.topk)
+        hits = retrieve(args.url, token, q["query"], args.topk, args.strategy)
         rank = first_hit_rank(hits, q["expect"])
         hit = rank is not None
         hits_at += 1 if hit else 0
@@ -143,6 +150,7 @@ def main() -> int:
             json.dumps(
                 {
                     "topk": args.topk,
+                    "strategy": args.strategy or "vector",
                     "summary": {
                         "total": total,
                         "hits": hits_at,

@@ -39,6 +39,46 @@ public class KnowledgeService {
     private final QdrantClient qdrant;
     private final AiProperties props;
 
+    /*
+     * 检索策略名。**做成请求参数而不是编译期常量**：这三条的取舍必须用同一份 golden set
+     * 对照测量来决定（eval/run_eval.py --strategy），靠直觉选一定选错 —— 本仓实测过
+     * 「看起来该有用的改动」反而让指标下降。
+     */
+    public static final String STRATEGY_VECTOR = "vector";
+    public static final String STRATEGY_HYBRID = "hybrid";
+    public static final String STRATEGY_RRF = "rrf";
+    public static final String STRATEGY_HYBRID_RRF = "hybrid-rrf";
+
+    /**
+     * 默认策略。取值由 {@code eval/run_eval.py} 的对照实验定，不是拍脑袋选的：
+     *
+     * <pre>
+     * 策略          HitRate@10   MRR      concept      filter MRR
+     * vector         91.7%      0.6285   5/6·0.4931   0.2917
+     * hybrid        100.0%      0.8056   6/6·0.8056   0.4167   ← 默认
+     * rrf            75.0%      0.5397   4/6·0.4405   0.1667
+     * hybrid-rrf    100.0%      0.7341   6/6·0.6349   0.5000
+     * </pre>
+     *
+     * ⚠️ **纯 RRF 比不做还差**（91.7% → 75.0%）。原因值得记住：RRF 只吃排名、丢掉
+     * 相似度，相当于给每个子查询**同等投票权**；而「家族」这类与语料不匹配的词，
+     * 它那一路的 top10 全是噪音（亚当斯一家/辛普森一家），融合时这些噪音被抬到了前面，
+     * 真正的目标反被稀释。当时对「多词查询被强特征词主导」的诊断是对的，
+     * 但「让每个词都发声」这个药方是错的 —— 正解是保留整体语义、把字面命中信号加回来。
+     * 留在这里是因为它是重要的负结果：语料或模型变了值得复测，但不要默认启用。
+     */
+    public static final String DEFAULT_STRATEGY = STRATEGY_HYBRID;
+
+    /** 混合策略先多召回几倍候选再重排；否则真正该赢的点可能压根不在原始 topK 里。 */
+    private static final int HYBRID_CANDIDATES = 3;
+    /**
+     * 字面命中加分的上限。实测向量分差多在 0.01~0.05 量级，0.08 足以翻转
+     * 「只差一点但标签明确命中」的情况，又不至于让纯标签匹配的无关作品反超语义正确的点。
+     */
+    private static final double LABEL_BOOST = 0.08;
+    /** RRF 平滑常数，取文献常用值 60。 */
+    private static final int RRF_K = 60;
+
     public KnowledgeService(EmbeddingModel embeddingModel, QdrantClient qdrant, AiProperties props) {
         this.embeddingModel = embeddingModel;
         this.qdrant = qdrant;
@@ -106,16 +146,149 @@ public class KnowledgeService {
     }
 
     /**
-     * 对查询文本做向量检索。
+     * 对查询文本做向量检索（默认策略 {@link #STRATEGY_VECTOR}）。
      *
      * <p>查询必须使用和入库相同的 embedding 模型，否则向量空间不一致，分数没有意义。
      * {@code topK} 被限制在 1 到 50，避免调用方一次拉取过多上下文；年份、评分和公共标签
      * 等结构化条件会由 {@link QdrantClient} 转为 Qdrant 的 pre-filter，在召回前过滤。
      */
     public List<KnowledgeHit> retrieve(String query, int topK, Map<String, Object> filters) {
+        return retrieve(query, topK, filters, DEFAULT_STRATEGY);
+    }
+
+    /** 按指定策略检索，见类顶部 STRATEGY_* 常量的说明。 */
+    public List<KnowledgeHit> retrieve(String query, int topK, Map<String, Object> filters, String strategy) {
         if (query == null || query.isBlank()) return List.of();
-        float[] vector = embeddingModel.embed(query).content().vector();
-        return qdrant.search(vector, Math.max(1, Math.min(topK, 50)), filters);
+        int limit = Math.max(1, Math.min(topK, 50));
+        // ⚠️ 「不传策略」必须等于「用默认策略」，不能退化成最原始的算法。
+        // 这里曾写成 strategy == null ? "" : ...，于是空值落到 switch 的 default 分支
+        // 变成 vector —— 表现为「默认策略改了但不生效」，而显式传 hybrid 却正常。
+        String mode = strategy == null || strategy.isBlank()
+                ? DEFAULT_STRATEGY
+                : strategy.trim().toLowerCase();
+        return switch (mode) {
+            case STRATEGY_RRF -> retrieveRrf(query, limit, filters);
+            case STRATEGY_HYBRID -> retrieveHybrid(query, limit, filters);
+            case STRATEGY_HYBRID_RRF -> retrieveHybridRrf(query, limit, filters);
+            default -> qdrant.search(embed(query), limit, filters);
+        };
+    }
+
+    /**
+     * 向量召回 + **标签字面命中加分**。
+     *
+     * <p>为什么需要：`filter` 类查询（如「政治 阴谋 机甲」）能召回但 MRR 偏低 ——
+     * 关键词其实就写在 payload 的 tags / meta_tags 里，却被稠密向量平均掉了，
+     * 「字面明确命中」的作品反而排不到前面。这里把字面命中显式加回去。
+     */
+    private List<KnowledgeHit> retrieveHybrid(String query, int limit, Map<String, Object> filters) {
+        List<String> terms = terms(query);
+        return rerankByLabels(qdrant.search(embed(query), limit * HYBRID_CANDIDATES, filters), terms, limit);
+    }
+
+    /**
+     * 查询分解 + RRF（Reciprocal Rank Fusion）融合。
+     *
+     * <p>为什么需要：实测「催泪 家族 治愈」召回不到 CLANNAD，而**去掉「家族」只用
+     * 「催泪 治愈」立刻回到 rank=5** —— 多词查询里某个"强特征词"会把向量方向带偏、
+     * 压掉其余信号。拆成子查询各自检索再融合，让每个词都保留自己的发言权。
+     *
+     * <p>RRF 只用**排名**不用原始分数，因此不受各子查询分数尺度不一致的影响，
+     * 这正是它比「相似度加权平均」更稳的原因。
+     */
+    private List<KnowledgeHit> retrieveRrf(String query, int limit, Map<String, Object> filters) {
+        return fuse(subQueries(query), limit, filters, null);
+    }
+
+    /** 标签加分 + RRF 叠加。 */
+    private List<KnowledgeHit> retrieveHybridRrf(String query, int limit, Map<String, Object> filters) {
+        return fuse(subQueries(query), limit, filters, terms(query));
+    }
+
+    /** 子查询 = 原查询（保留整体语义）+ 每个词（保留各自声音）。 */
+    private static List<String> subQueries(String query) {
+        List<String> out = new ArrayList<>();
+        out.add(query.trim());
+        for (String term : terms(query)) if (!term.equals(query.trim())) out.add(term);
+        return out;
+    }
+
+    /**
+     * 对多路召回结果做 RRF 融合并取前 limit 条。
+     *
+     * @param labelTerms 非 null 时，每路先按标签命中重排（混合 + RRF 叠加）
+     */
+    private List<KnowledgeHit> fuse(
+            List<String> queries, int limit, Map<String, Object> filters, List<String> labelTerms) {
+        Map<Long, Double> fused = new HashMap<>();
+        Map<Long, KnowledgeHit> byId = new LinkedHashMap<>();
+        for (String sub : queries) {
+            List<KnowledgeHit> hits = labelTerms == null
+                    ? qdrant.search(embed(sub), limit, filters)
+                    : rerankByLabels(qdrant.search(embed(sub), limit * HYBRID_CANDIDATES, filters), labelTerms, limit);
+            for (int rank = 0; rank < hits.size(); rank++) {
+                KnowledgeHit hit = hits.get(rank);
+                fused.merge(hit.subjectId(), 1.0 / (RRF_K + rank + 1), Double::sum);
+                byId.putIfAbsent(hit.subjectId(), hit);
+            }
+        }
+        return fused.entrySet().stream()
+                .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
+                .limit(limit)
+                // 用融合分替换原始相似度：调用方看到的 score 必须就是排序依据，否则没法解释排序
+                .map(e -> {
+                    KnowledgeHit hit = byId.get(e.getKey());
+                    return new KnowledgeHit(hit.subjectId(), e.getValue(), hit.text(), hit.payload());
+                })
+                .toList();
+    }
+
+    /** 字面命中重排：命中词占比越高加分越多，但上限受 LABEL_BOOST 约束，不会压过语义。 */
+    private static List<KnowledgeHit> rerankByLabels(
+            List<KnowledgeHit> candidates, List<String> labelTerms, int limit) {
+        if (labelTerms.isEmpty()) return candidates.stream().limit(limit).toList();
+        List<KnowledgeHit> scored = new ArrayList<>(candidates.size());
+        for (KnowledgeHit hit : candidates) {
+            String haystack = labelText(hit.payload());
+            long matched = labelTerms.stream().filter(t -> haystack.contains(t.toLowerCase())).count();
+            scored.add(new KnowledgeHit(hit.subjectId(),
+                    hit.score() + LABEL_BOOST * ((double) matched / labelTerms.size()),
+                    hit.text(), hit.payload()));
+        }
+        scored.sort((a, b) -> Double.compare(b.score(), a.score()));
+        return scored.stream().limit(limit).toList();
+    }
+
+    /** 只拼名字与标签，**不含简介** —— 简介很长，命中几乎恒真，加分就没有区分度了。 */
+    private static String labelText(Map<String, Object> payload) {
+        StringBuilder out = new StringBuilder();
+        for (String key : List.of("name", "name_cn")) {
+            Object value = payload.get(key);
+            if (value != null) out.append(String.valueOf(value).toLowerCase()).append(' ');
+        }
+        for (String key : List.of("tags", "meta_tags")) {
+            if (payload.get(key) instanceof List<?> values) {
+                for (Object value : values) {
+                    if (value != null) out.append(String.valueOf(value).toLowerCase()).append(' ');
+                }
+            }
+        }
+        return out.toString();
+    }
+
+    /** 查询拆词：中文没有空格分词，只按显式分隔符拆；拆不动就退化成整体一路。 */
+    private static List<String> terms(String query) {
+        if (query == null) return List.of();
+        List<String> out = new ArrayList<>();
+        for (String part : query.split("[\\s,，、/]+")) {
+            String term = part.trim();
+            if (!term.isEmpty() && !out.contains(term)) out.add(term);
+        }
+        return out;
+    }
+
+    private float[] embed(String text) {
+        return embeddingModel.embed(text).content().vector();
     }
 
     private static String hash(String value) {
