@@ -37,6 +37,7 @@ class BangumiClientTest {
                 null,
                 null,
                 null,
+                null,
                 null);
         return new BangumiClient(props);
     }

@@ -60,6 +60,13 @@ ai:
     collection: ${AI_QDRANT_COLLECTION:anime_knowledge}
     top-k: ${AI_QDRANT_TOP_K:10}
 
+  # TMDB：分集简介与角色集数（Bangumi 的 episodes.desc 覆盖率仅 17%，不可用）
+  # 免费非商业用途；应用内必须署名，缓存不得超过六个月（客户端已内置 24h TTL）
+  tmdb:
+    base-url: ${AI_TMDB_BASE_URL:https://api.themoviedb.org/3}
+    token: ${AI_TMDB_TOKEN:}
+    language: ${AI_TMDB_LANGUAGE:zh-CN}
+
   # 检索行为开关。改这两项只需重启，不用改代码重新发布。
   retrieval:
     # vector / hybrid / rrf / hybrid-rrf；留空即 hybrid

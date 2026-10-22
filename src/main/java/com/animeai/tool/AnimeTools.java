@@ -35,12 +35,17 @@ public class AnimeTools {
 
     private final BangumiClient bangumi;
     private final KnowledgeService knowledge;
+    private final SeriesKnowledge series;
     private final AiProperties props;
 
     public AnimeTools(
-            BangumiClient bangumi, ObjectProvider<KnowledgeService> knowledge, AiProperties props) {
+            BangumiClient bangumi,
+            ObjectProvider<KnowledgeService> knowledge,
+            SeriesKnowledge series,
+            AiProperties props) {
         this.bangumi = bangumi;
         this.knowledge = knowledge.getIfAvailable();
+        this.series = series;
         this.props = props;
     }
 
@@ -106,6 +111,40 @@ public class AnimeTools {
             log.warn("search_knowledge 检索失败，降级为无结果（对话应继续）: {}", e.toString());
             return List.of();
         }
+    }
+
+    @Tool(
+            name = "find_character_episodes",
+            value =
+                    """
+            查询某个角色在某部番里出现在哪些集。用户问「XX 第几集出场」「XX 什么时候出现」
+            「XX 在哪几集」时用它。
+
+            依据是 TMDB 每集**剧情简介的文本匹配**，不是画面识别。所以回答必须说明
+            「剧情简介里提到的集」，不要断言「只有这些集有她」。
+            已知作品名+角色名时用它；只知道剧情片段时用 search_knowledge。
+            """)
+    public String findCharacterEpisodes(
+            @P("作品名，例如「无职转生」") String title,
+            @P("角色名，例如「艾莉丝」") String character,
+            @P(value = "最多查几季，默认 2", required = false) Integer seasons) {
+        return series.findCharacterEpisodes(title, character, seasons);
+    }
+
+    @Tool(
+            name = "series_outline",
+            value =
+                    """
+            获取一部番**各季各集**的剧情简介，用来回答「第一季讲了什么」「前两季讲了什么」。
+            返回的是分集素材，需要你**按季归纳主线**，不要逐集复述。
+
+            已知作品名时用它；**想不起名字、只有剧情描述**时用 search_knowledge 先找作品。
+            """)
+    public String seriesOutline(
+            @P("作品名，例如「无职转生」") String title,
+            @P(value = "最多查几季，默认 2", required = false) Integer seasons,
+            @P(value = "每季最多列几集，默认 30", required = false) Integer episodes) {
+        return series.seriesOutline(title, seasons, episodes);
     }
 
     private static AnimeCard toCard(KnowledgeHit hit) {

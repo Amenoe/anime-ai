@@ -17,6 +17,7 @@ public record AiProperties(
         Bangumi bangumi,
         Qdrant qdrant,
         Corpus corpus,
+        Tmdb tmdb,
         Retrieval retrieval,
         String internalToken) {
 
@@ -37,6 +38,14 @@ public record AiProperties(
     public record Embedding(String baseUrl, String apiKey, String model, Integer dimensions) {}
 
     public record Qdrant(String baseUrl, String collection, Integer topK) {}
+
+    /**
+     * TMDB（分集简介 / 角色集数）。
+     *
+     * @param token v4 Read Access Token，走 Authorization: Bearer。
+     *              免费非商业用途，必须在应用内署名；缓存不得超过六个月。
+     */
+    public record Tmdb(String baseUrl, String token, String language) {}
 
     /**
      * 检索行为开关。

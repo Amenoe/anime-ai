@@ -33,6 +33,7 @@ class AnimeToolsDegradeTest {
                 null,
                 null,
                 null,
+                null,
                 new AiProperties.Retrieval("hybrid", retrievalEnabled),
                 "token");
     }
@@ -60,7 +61,7 @@ class AnimeToolsDegradeTest {
                 throw new IllegalStateException("qdrant down");
             }
         };
-        AnimeTools tools = new AnimeTools(null, providerOf(broken), props(true));
+        AnimeTools tools = new AnimeTools(null, providerOf(broken), null, props(true));
 
         List<AnimeCard> result = tools.searchKnowledge("时间循环 悬疑", 5);
 
@@ -76,14 +77,14 @@ class AnimeToolsDegradeTest {
                 throw new AssertionError("ai.retrieval.enabled=false 时不该调用 retrieve");
             }
         };
-        AnimeTools tools = new AnimeTools(null, providerOf(shouldNotBeCalled), props(false));
+        AnimeTools tools = new AnimeTools(null, providerOf(shouldNotBeCalled), null, props(false));
 
         assertThat(tools.searchKnowledge("任意查询", 5)).isEmpty();
     }
 
     @Test
     void 未配置knowledge时返回空而不是抛空指针() {
-        AnimeTools tools = new AnimeTools(null, providerOf(null), props(true));
+        AnimeTools tools = new AnimeTools(null, providerOf(null), null, props(true));
 
         assertThat(tools.searchKnowledge("任意查询", 5)).isEmpty();
     }
@@ -100,7 +101,7 @@ class AnimeToolsDegradeTest {
                         Map.of("name_cn", "命运石之门", "name", "STEINS;GATE", "rating", 8.8, "rank", 8)));
             }
         };
-        AnimeTools tools = new AnimeTools(null, providerOf(working), props(true));
+        AnimeTools tools = new AnimeTools(null, providerOf(working), null, props(true));
 
         List<AnimeCard> result = tools.searchKnowledge("时间循环 悬疑", 5);
 
@@ -119,7 +120,7 @@ class AnimeToolsDegradeTest {
                 return List.of();
             }
         };
-        AnimeTools tools = new AnimeTools(null, providerOf(working), props(true));
+        AnimeTools tools = new AnimeTools(null, providerOf(working), null, props(true));
 
         tools.searchKnowledge("查询", 999);
         tools.searchKnowledge("查询", 0);
