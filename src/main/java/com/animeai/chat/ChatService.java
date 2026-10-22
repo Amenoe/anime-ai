@@ -21,6 +21,7 @@ import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.TokenStream;
+import dev.langchain4j.service.tool.ToolErrorHandlerResult;
 import dev.langchain4j.service.tool.ToolExecution;
 
 import org.slf4j.Logger;
@@ -145,6 +146,27 @@ public class ChatService {
                     // 兜住失控的工具循环：它与上面的窗口大小是**一对**，
                     // 少了这个上限，模型可以一直调工具，窗口再大也会被顶掉。
                     .maxToolCallingRoundTrips(MAX_TOOL_ROUNDS)
+                    /*
+                     * 工具失败时的**兜底话术**。
+                     *
+                     * 默认行为是把原始异常塞回模型 —— 实测 Bangumi 网关返 500 时，
+                     * 模型收到的是一整坨 nginx 的 HTML，它既看不懂、又以为该重试，
+                     * 于是连调 5 次 search_anime，最后整轮对话以
+                     * `exceeded 5 tool calling round trips` 报错收场，用户一个字都没看到。
+                     *
+                     * 这里换成一句**模型能照做**的指令：说清什么坏了、要求停止重试、
+                     * 并明确禁止编造。上游抖动时用户看到的是人话而不是技术栈。
+                     */
+                    .toolExecutionErrorHandler((error, context) -> {
+                        String tool = context.toolExecutionRequest() == null
+                                ? "番剧工具"
+                                : context.toolExecutionRequest().name();
+                        log.warn("工具 {} 执行失败，改为向模型返回可读提示: {}", tool, error.toString());
+                        return ToolErrorHandlerResult.text(
+                                "调用 " + tool + " 失败（上游数据服务异常：" + briefReason(error) + "）。"
+                                        + "请直接告诉用户「番剧数据服务暂时不可用，请稍后再试」，"
+                                        + "不要重复调用同一个工具，也不要编造番剧信息来填补空缺。");
+                    })
                     .build();
 
             log.debug(
@@ -291,6 +313,22 @@ public class ChatService {
     }
 
     /** 把 JSON 字符串还原成对象，避免在 SSE 里嵌套一层转义字符串。 */
+    /**
+     * 把异常压成一句短文本。
+     *
+     * <p>必须短：这段文本会进入模型上下文，把 nginx 那几百字节 HTML 塞进去
+     * 既浪费 token 又干扰判断；只要让模型知道「什么类型的故障」就够了。
+     */
+    private static String briefReason(Throwable error) {
+        Throwable root = error;
+        while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+        String name = root.getClass().getSimpleName();
+        String message = root.getMessage();
+        if (message == null || message.isBlank()) return name;
+        String trimmed = message.replaceAll("\\s+", " ").trim();
+        return name + ": " + trimmed.substring(0, Math.min(80, trimmed.length()));
+    }
+
     private Object jsonOrRaw(String json) {
         if (json == null || json.isBlank()) {
             return null;
