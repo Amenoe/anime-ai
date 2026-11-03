@@ -12,6 +12,7 @@ import com.animeai.support.Json;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
@@ -63,6 +64,15 @@ public class TmdbClient {
                 ? "https://api.themoviedb.org/3"
                 : config.baseUrl().replaceAll("/+$", "");
         RestClient.Builder builder = RestClient.builder().baseUrl(baseUrl);
+        /*
+         * 生产服务器访问 api.themoviedb.org 会被 DNS 污染 / SNI 阻断，请求会一直挂到
+         * 默认超时（十几秒），把一轮对话拖到 NestJS 的上游空闲超时之外。
+         * 这里用短超时快速失败：拿不到 TMDB 只是「系列简介」缺数据，不该拖垮整轮对话。
+         */
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(5));
+        factory.setReadTimeout(Duration.ofSeconds(8));
+        builder.requestFactory(factory);
         if (enabled) {
             // v4 Read Access Token 走 Bearer：不会像 v3 api_key 那样出现在 URL 与日志里
             builder = builder.defaultHeader("Authorization", "Bearer " + config.token());
