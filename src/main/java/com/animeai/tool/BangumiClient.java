@@ -254,6 +254,10 @@ public class BangumiClient {
     }
 
     private static boolean isRetryable(RuntimeException e) {
+        if (e instanceof BangumiResponseException) {
+            // 反代回 HTML 错误页：请求本身是 200，只有解析时才会发现
+            return true;
+        }
         if (e instanceof ResourceAccessException) {
             return true;
         }
