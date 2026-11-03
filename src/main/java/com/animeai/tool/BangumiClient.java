@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import com.animeai.config.AiProperties;
 import com.animeai.model.AnimeCard;
@@ -17,7 +18,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 /**
  * Bangumi 公开 API 客户端。
@@ -43,6 +48,18 @@ public class BangumiClient {
     private static final int MAX_SUMMARY_CHARS = 120;
     /** 标签只保留前几个 */
     private static final int MAX_TAGS = 5;
+
+    /**
+     * 一次调用最多尝试次数（首次 + 重试 1 次）。
+     *
+     * <p>生产走 Cloudflare 反代，跨境链路实测同一请求 1.7s–30s 抖动；
+     * 反代侧对 GET 有 10 分钟缓存，重试往往能命中缓存或落到另一个边缘节点，
+     * 成本远低于让用户把问题重问一遍。
+     */
+    private static final int MAX_ATTEMPTS = 2;
+
+    /** 重试间隔：给反代/上游一点恢复时间，又不会明显拉长等待 */
+    private static final long RETRY_DELAY_MS = 300;
 
     private final RestClient client;
 
@@ -100,24 +117,25 @@ public class BangumiClient {
         body.put("sort", (sort == null || sort.isBlank()) ? "match" : sort);
         body.put("filter", filter);
 
-        String raw = client.post()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/v0/search/subjects")
-                        .queryParam("limit", limit)
-                        .queryParam("offset", offset)
-                        .build())
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
-                .body(String.class);
-
         SearchResponse response;
         try {
-            response = Json.MAPPER.readValue(raw, SearchResponse.class);
-        } catch (Exception e) {
-            // Bangumi 的 schema 会演进（例如 rating.count 是分数分布对象而不是整数），
-            // 打真实接口才暴露得出来。把原始响应的头部一起记下来，方便直接定位字段错配。
-            log.warn("bangumi 响应解析失败: {} | 原始响应前 800 字: {}", e.toString(), abbreviate(raw, 800));
+            // 请求与解析一起重试：反代偶尔会回 200 + HTML 错误页，只重试网络层救不回来
+            response = retry("POST /v0/search/subjects", () -> {
+                String raw = client.post()
+                        .uri(uriBuilder -> uriBuilder
+                                .path("/v0/search/subjects")
+                                .queryParam("limit", limit)
+                                .queryParam("offset", offset)
+                                .build())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(body)
+                        .retrieve()
+                        .body(String.class);
+                return parse(raw, SearchResponse.class, "搜索");
+            });
+        } catch (RuntimeException e) {
+            log.warn("bangumi 搜索失败（已重试 {} 次）: keyword={} tags={} metaTags={} err={}",
+                    MAX_ATTEMPTS - 1, keyword, tags, metaTags, e.toString());
             return List.of();
         }
 
@@ -145,50 +163,133 @@ public class BangumiClient {
     public List<AnimeCard> browseSubjects(Integer year, Integer month, String sort, int limit, int offset) {
         String safeSort = ("date".equalsIgnoreCase(sort)) ? "date" : "rank";
 
-        String raw = client.get()
-                .uri(uriBuilder -> {
-                    uriBuilder.path("/v0/subjects")
-                            .queryParam("type", TYPE_ANIME)
-                            .queryParam("sort", safeSort)
-                            .queryParam("limit", limit)
-                            .queryParam("offset", offset);
-                    if (year != null) {
-                        uriBuilder.queryParam("year", year);
-                    }
-                    if (month != null && year != null) {
-                        uriBuilder.queryParam("month", month);
-                    }
-                    return uriBuilder.build();
-                })
-                .retrieve()
-                .body(String.class);
-
+        PagedResponse response;
         try {
-            // 浏览接口的响应体形如 { data: [...], total, limit, offset }
-            PagedResponse response = Json.MAPPER.readValue(raw, PagedResponse.class);
-            if (response == null || response.data() == null) {
-                return List.of();
-            }
-            return response.data().stream().map(BangumiClient::toCard).toList();
-        } catch (Exception e) {
-            log.warn("bangumi 浏览响应解析失败: {} | 原始响应前 800 字: {}", e.toString(), abbreviate(raw, 800));
+            response = retry("GET /v0/subjects", () -> {
+                String raw = client.get()
+                        .uri(uriBuilder -> {
+                            uriBuilder.path("/v0/subjects")
+                                    .queryParam("type", TYPE_ANIME)
+                                    .queryParam("sort", safeSort)
+                                    .queryParam("limit", limit)
+                                    .queryParam("offset", offset);
+                            if (year != null) {
+                                uriBuilder.queryParam("year", year);
+                            }
+                            if (month != null && year != null) {
+                                uriBuilder.queryParam("month", month);
+                            }
+                            return uriBuilder.build();
+                        })
+                        .retrieve()
+                        .body(String.class);
+                // 浏览接口的响应体形如 { data: [...], total, limit, offset }
+                return parse(raw, PagedResponse.class, "浏览");
+            });
+        } catch (RuntimeException e) {
+            log.warn("bangumi 浏览失败（已重试 {} 次）: year={} month={} sort={} err={}",
+                    MAX_ATTEMPTS - 1, year, month, safeSort, e.toString());
             return List.of();
         }
+
+        if (response == null || response.data() == null) {
+            return List.of();
+        }
+        return response.data().stream().map(BangumiClient::toCard).toList();
     }
 
     /** 用于离线知识库导入：保留完整简介和完整标签，不裁成对话卡片格式。 */
     public List<Subject> browseKnowledgeSubjects(int limit, int offset) {
-        String raw = client.get()
-                .uri(uriBuilder -> uriBuilder.path("/v0/subjects")
-                        .queryParam("type", TYPE_ANIME).queryParam("sort", "rank")
-                        .queryParam("limit", limit).queryParam("offset", offset).build())
-                .retrieve().body(String.class);
         try {
-            PagedResponse response = Json.MAPPER.readValue(raw, PagedResponse.class);
+            PagedResponse response = retry("GET /v0/subjects (knowledge)", () -> {
+                String raw = client.get()
+                        .uri(uriBuilder -> uriBuilder.path("/v0/subjects")
+                                .queryParam("type", TYPE_ANIME).queryParam("sort", "rank")
+                                .queryParam("limit", limit).queryParam("offset", offset).build())
+                        .retrieve().body(String.class);
+                return parse(raw, PagedResponse.class, "知识库分页");
+            });
             return response == null || response.data() == null ? List.of() : response.data();
-        } catch (Exception e) {
-            log.warn("bangumi 知识库分页解析失败: {} | 原始响应前 800 字: {}", e.toString(), abbreviate(raw, 800));
+        } catch (RuntimeException e) {
+            log.warn("bangumi 知识库分页失败（已重试 {} 次）: {}", MAX_ATTEMPTS - 1, e.toString());
             return List.of();
+        }
+    }
+
+    // ── 重试与解析 ──────────────────────────────────────────────
+
+    /**
+     * 带一次重试地执行 Bangumi 请求。
+     *
+     * <p>为什么不只是调大超时：跨境链路的问题不是「慢」而是「时快时慢」，
+     * 单纯调超时只能把快速失败变成慢速失败。反代对 GET 有 10 分钟缓存，
+     * 重试大概率命中缓存或换一个边缘节点，成本很低。
+     *
+     * <p>只重试可恢复的错误：网络/超时、5xx、429，以及「响应体不是合法 JSON」
+     * （反代偶尔会回 HTML 错误页）；其它 4xx 是参数问题，重试没有意义。
+     */
+    private <T> T retry(String label, Supplier<T> call) {
+        RuntimeException last = null;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            long started = System.nanoTime();
+            try {
+                return call.get();
+            } catch (RuntimeException e) {
+                last = e;
+                long costMs = (System.nanoTime() - started) / 1_000_000;
+                if (attempt >= MAX_ATTEMPTS || !isRetryable(e)) {
+                    break;
+                }
+                log.warn("bangumi {} 第 {} 次失败（{} ms），{} ms 后重试: {}",
+                        label, attempt, costMs, RETRY_DELAY_MS, e.toString());
+                try {
+                    Thread.sleep(RETRY_DELAY_MS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        throw last == null ? new IllegalStateException("bangumi 请求未执行: " + label) : last;
+    }
+
+    private static boolean isRetryable(RuntimeException e) {
+        if (e instanceof ResourceAccessException) {
+            return true;
+        }
+        if (e instanceof HttpServerErrorException) {
+            return true;
+        }
+        if (e instanceof HttpClientErrorException) {
+            // 4xx 里只有 429 值得重试，其余是参数/鉴权问题
+            return e instanceof HttpClientErrorException.TooManyRequests;
+        }
+        // 反代回 HTML 错误页时，RestClient 会抛基类异常；这类也重试一次
+        return e instanceof RestClientException;
+    }
+
+    private static <T> T parse(String raw, Class<T> type, String label) {
+        if (raw == null || raw.isBlank()) {
+            throw new BangumiResponseException(label + " 返回空响应体");
+        }
+        try {
+            return Json.MAPPER.readValue(raw, type);
+        } catch (Exception e) {
+            // Bangumi 的 schema 会演进（例如 rating.count 是分数分布对象而不是整数），
+            // 打真实接口才暴露得出来。把原始响应的头部一起记下来，方便直接定位字段错配。
+            log.warn("bangumi {} 响应解析失败: {} | 原始响应前 800 字: {}", label, e.toString(), abbreviate(raw, 800));
+            throw new BangumiResponseException(label + " 响应不是合法 JSON", e);
+        }
+    }
+
+    /** 上游返回了非预期响应体（常见于反代返回 HTML 错误页）。 */
+    private static class BangumiResponseException extends RuntimeException {
+        BangumiResponseException(String message) {
+            super(message);
+        }
+
+        BangumiResponseException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 

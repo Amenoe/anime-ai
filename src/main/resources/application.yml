@@ -86,7 +86,9 @@ ai:
   bangumi:
     base-url: ${AI_BANGUMI_BASE_URL:https://api.bgm.tv}
     user-agent: ${AI_BANGUMI_UA:anime-ai/0.1 (https://github.com/Amenoe/anime-chat)}
-    timeout: 15s
+    # 读超时。生产走 Cloudflare 反代，跨境链路实测同一请求 1.7s–30s 波动，
+    # 15s 会把「慢」直接判成「失败」；配合一次重试，30s 是成功率与等待时长的折中。
+    timeout: ${AI_BANGUMI_TIMEOUT:30s}
 
 logging:
   level:
